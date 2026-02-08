@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "author": "Alexandra",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-breadboard-mini", "id": "bb1", "top": -107, "left": 93.6, "attrs": {} },
+    { "type": "wokwi-arduino-mega", "id": "mega", "top": 135, "left": 44.4, "attrs": {} },
+    {
+      "type": "wokwi-led",
+      "id": "led1",
+      "top": -128.4,
+      "left": 138.2,
+      "attrs": { "color": "red" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r1",
+      "top": -33.6,
+      "left": 133.85,
+      "rotate": 90,
+      "attrs": { "value": "1000" }
+    }
+  ],
+  "connections": [
+    [ "r1:2", "mega:13", "green", [ "h0" ] ],
+    [ "led1:A", "bb1:7t.b", "", [ "$bb" ] ],
+    [ "led1:C", "bb1:6t.b", "", [ "$bb" ] ],
+    [ "r1:1", "bb1:7t.e", "", [ "$bb" ] ],
+    [ "r1:2", "bb1:7b.i", "", [ "$bb" ] ],
+    [ "bb1:6t.e", "mega:GND.1", "green", [ "v172.8", "h9.6" ] ]
+  ],
+  "dependencies": {}
+}
