@@ -76,15 +76,27 @@ void Lab1_Setup()
  * @brief Main loop for Lab 1
  * 
  * Continuously waits for serial input and processes commands.
- * This is a blocking loop - it waits for complete lines of input.
+ * Uses scanf to read input directly from serial.
  */
 void Lab1_Loop()
 {
-    char commandBuffer[BufferSize];
+    char command[BufferSize];
+    char action[BufferSize];
 
-    // Read one line from serial (blocking - waits for \r or \n)
-    SerialReadLine(commandBuffer, BufferSize);
+    // Read first word from serial input using scanf
+    // scanf blocks until data is available and a space/newline is received
+    scanf("%63s", command);
     
-    // Parse and execute the command
-    ProcessCommand(commandBuffer);
+    // Check if we need to read a second word (e.g., "led on", "led off")
+    if (strcmp(command, "led") == 0)
+    {
+        // Read the action word (on/off)
+        scanf("%63s", action);
+        // Concatenate into single command string for processing
+        strcat(command, " ");
+        strcat(command, action);
+    }
+    
+    // Parse and execute the complete command
+    ProcessCommand(command);
 }

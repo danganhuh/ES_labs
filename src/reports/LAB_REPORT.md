@@ -586,110 +586,221 @@ After 1s: LedDriver.Off(), return to menu
 
 ### 3.3 Hardware-Software Interface Architecture on Levels (4 points)
 
-#### Three-Level Architecture
+#### Six-Layer Comprehensive Architecture
 
-**Level 1: MCAL (Microcontroller Abstraction Layer)**
-```
-┌─────────────────────────────────────────┐
-│  Arduino Core Functions                  │
-├─────────────────────────────────────────┤
-│ I/O Functions:                           │
-│  - digitalWrite(pin, HIGH/LOW)          │
-│  - digitalRead(pin)                     │
-│  - pinMode(pin, OUTPUT/INPUT)           │
-│                                          │
-│ Timing Functions:                        │
-│  - millis()                              │
-│  - delay()                               │
-│                                          │
-│ Communication:                           │
-│  - Serial.begin(), print(), println()   │
-│                                          │
-│ Scope: Direct MCU register access        │
-│ Responsibility: Chip-specific details    │
-└─────────────────────────────────────────┘
-```
+The smart lock system implements a **comprehensive six-layer architecture** providing clear separation of concerns from application logic to physical hardware:
 
-**Level 2: ECAL (Electronic Control Abstraction Layer)**
+**Layer 1: Software Layer - User Interface & Application Logic**
 ```
-┌─────────────────────────────────────────┐
-│  Hardware Drivers (Reusable Modules)     │
-├─────────────────────────────────────────┤
-│ LedDriver                                │
-│  ├─ LedDriver(uint8_t pin)              │
-│  ├─ void Init()                         │
-│  ├─ void On()                           │
-│  ├─ void Off()                          │
-│  ├─ void Toggle()                       │
-│  └─ Implementation: Wraps digitalWrite  │
-│                                          │
-│ KeypadDriver                             │
-│  ├─ KeypadDriver(char[4][4], ...)       │
-│  ├─ void Init()                         │
-│  ├─ char GetKey()  [20ms debounce]      │
-│  └─ Implementation: Wraps Keypad lib    │
-│                                          │
-│ LcdDriver                                │
-│  ├─ LcdDriver(rs, en, d4-d7)            │
-│  ├─ void Init()                         │
-│  ├─ void Print(line1, line2)            │
-│  ├─ void Clear()                        │
-│  └─ Implementation: Wraps LiquidCrystal │
-│                                          │
-│ Scope: Component-specific abstractions   │
-│ Responsibility: Hardware nuances         │
-│ Benefit: Reusable across projects       │
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│         SOFTWARE LAYER (Application)                 │
+├──────────────────────────────────────────────────────┤
+│ Lab1_2_main.cpp                                      │
+│  ├─ void setup() [Initialize all drivers]           │
+│  ├─ void loop() [Main event loop]                    │
+│  ├─ Menu navigation logic                           │
+│  ├─ User input processing                           │
+│  ├─ Non-blocking feedback timing (millis-based)     │
+│  └─ Orchestration of all subsystems                 │
+│                                                      │
+│ Scope: User-facing behavior, application flow       │
+│ Responsibility: Coordinate drivers & FSM            │
+│ Independence: No direct hardware access             │
+└──────────────────────────────────────────────────────┘
 ```
 
-**Level 3: SRV (Service/Business Logic Layer)**
+**Layer 2: SRV Layer - Business Logic & State Management**
 ```
-┌─────────────────────────────────────────┐
-│  Application & FSM Logic                 │
-├─────────────────────────────────────────┤
-│ LockFSM                                  │
-│  ├─ void SelectOperation(char op)       │
-│  ├─ void ProcessInput(const char* pwd)  │
-│  ├─ LockState GetState()                │
-│  ├─ bool WasLastOpError()               │
-│  └─ Logic: State transitions, password  │
-│     validation, state tracking          │
-│                                          │
-│ Lab1_2_main (Application)                │
-│  ├─ void setup() [initialize drivers]   │
-│  ├─ void loop() [main event loop]       │
-│  ├─ Orchestrates all drivers & FSM      │
-│  ├─ Manages non-blocking feedback       │
-│  └─ Implements user interaction flow    │
-│                                          │
-│ Scope: Application-specific behavior    │
-│ Responsibility: Business logic,         │
-│                orchestration            │
-│ Independence: No hardware knowledge     │
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│    SRV LAYER (Service/Business Logic)                │
+├──────────────────────────────────────────────────────┤
+│ LockFSM.cpp (Finite State Machine)                  │
+│  ├─ 7 system states (MENU, LOCKED, UNLOCKED, ...)  │
+│  ├─ void SelectOperation(char op)                   │
+│  ├─ void ProcessInput(const char* password)         │
+│  ├─ LockState GetState()                            │
+│  ├─ bool WasLastOpError()                           │
+│  ├─ Password verification logic                     │
+│  └─ State transition management                     │
+│                                                      │
+│ Scope: Decision making, system behavior             │
+│ Responsibility: Business logic, state transitions    │
+│ Independence: No hardware/ECAL knowledge            │
+└──────────────────────────────────────────────────────┘
 ```
 
-#### Physical Signal Flow Through Layers
+**Layer 3: ECAL Layer - Hardware Drivers**
+```
+┌──────────────────────────────────────────────────────┐
+│  ECAL LAYER (Electronic Control Abstraction)         │
+├──────────────────────────────────────────────────────┤
+│ KeypadDriver (Matrix Keypad Control)                │
+│  ├─ char GetKey() [20ms software debouncing]        │
+│  ├─ Key scanning logic (row/column multiplexing)    │
+│  └─ Debounce filter implementation                  │
+│                                                      │
+│ LcdDriver (Display Control)                         │
+│  ├─ void Print(line1, line2)                        │
+│  ├─ void Clear()                                    │
+│  ├─ void SetCursor(col, row)                        │
+│  └─ HD44780 timing protocol management              │
+│                                                      │
+│ LedDriver (LED Control)                             │
+│  ├─ void On()                                       │
+│  ├─ void Off()                                      │
+│  └─ GPIO pin state management                       │
+│                                                      │
+│ Scope: Hardware interface abstraction               │
+│ Responsibility: Component-specific protocols        │
+│ Benefit: Reusable, testable drivers                 │
+└──────────────────────────────────────────────────────┘
+```
+
+**Layer 4: MCAL Layer - Arduino Framework Abstraction**
+```
+┌──────────────────────────────────────────────────────┐
+│  MCAL LAYER (Microcontroller Abstraction)            │
+├──────────────────────────────────────────────────────┤
+│ Arduino Core Functions                               │
+│  ├─ I/O Operations: digitalWrite(), digitalRead()   │
+│  ├─ Configuration: pinMode()                         │
+│  ├─ Timing: millis(), micros(), delay()             │
+│  ├─ Serial: Serial.begin(), print(), read()         │
+│  └─ External Libraries: Keypad, LiquidCrystal       │
+│                                                      │
+│ Scope: MCU register operations                       │
+│ Responsibility: Chip-specific functionality         │
+│ Gate: Controls access to hardware peripherals       │
+└──────────────────────────────────────────────────────┘
+```
+
+**Layer 5: MCU Layer - Microcontroller Unit (ATmega328P)**
+```
+┌──────────────────────────────────────────────────────┐
+│    MCU LAYER (Microcontroller Processor)             │
+├──────────────────────────────────────────────────────┤
+│ ATmega328P Processor                                 │
+│  ├─ CPU (16MHz clock)                                │
+│  ├─ GPIO Registers (DDRB, DDRC, DDRD for pin config)│
+│  ├─ GPIO Data Registers (PORTB, PORTC, PORTD)       │
+│  ├─ Timer/Counter0 (millis() implementation)         │
+│  ├─ UART Peripheral (serial communication)           │
+│  ├─ RAM: 2KB (SRAM)                                  │
+│  ├─ Flash: 32KB (program memory)                     │
+│  └─ EEPROM: 1KB (non-volatile storage)               │
+│                                                      │
+│ Scope: Physical processor and built-in peripherals  │
+│ Responsibility: Hardware resource management        │
+│ Control: Executes compiled firmware                 │
+└──────────────────────────────────────────────────────┘
+```
+
+**Layer 6: ECU Layer - Electronic Control Unit (Physical Hardware)**
+```
+┌──────────────────────────────────────────────────────┐
+│   ECU LAYER (Electronic Control Unit - Hardware)     │
+├──────────────────────────────────────────────────────┤
+│ Input Devices                                        │
+│  ├─ 4×4 Matrix Keypad (16 keys, 8 GPIO lines)       │
+│  │   └─ Row pins: A0, A1, A2, A3 (GPIO inputs)      │
+│  │   └─ Col pins: 6, 7, 8, 9 (GPIO outputs)         │
+│  └─ Serial USB Interface (debugging, future use)    │
+│                                                      │
+│ Output Devices                                       │
+│  ├─ 16×2 Character LCD Display                       │
+│  │   └─ 7 control lines: RS(12), EN(11), D4-D7(5,4,3,2)
+│  ├─ Green LED (Pin 10, via 220Ω resistor)           │
+│  └─ Red LED (Pin 13, via 220Ω resistor)             │
+│                                                      │
+│ Power & Support                                      │
+│  ├─ USB 5V Power Supply (500mA available)            │
+│  ├─ GND Return Paths                                 │
+│  └─ Current Limiting Resistors (220Ω × 2)           │
+│                                                      │
+│ Scope: Physical electronic components               │
+│ Responsibility: Hardware execution                  │
+│ Role: Translates electrical signals to physical action
+└──────────────────────────────────────────────────────┘
+```
+
+#### Signal Flow Through Six Layers
 
 ```
-Physical Keypress
-    ↓ (electrical signal on GPIO)
-MCAL [digitalWrite, digitalRead]
-    ↓ (raw key matrix scanning)
-ECAL [KeypadDriver.GetKey()]
-    ↓ (20ms-debounced character)
-SRV [Lab1_2_main event handler]
-    ↓ (decision logic)
-SRV [LockFSM.SelectOperation()]
-    ↓ (state transition calculation)
-SRV [LockFSM.GetState(), GetMessage()]
-    ↓ (current state + UI message)
-ECAL [LcdDriver.Print(), LedDriver.On()]
-    ↓ (driver commands)
-MCAL [digitalWrite, digitalWrite]
-    ↓ (electrical signals: +5V)
-Physical Hardware (LCD display, LED)
+USER INTERACTION
+    ↓
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LAYER 1: SOFTWARE (Lab1_2_main)
+    Receives user input from KeypadDriver
+    ↓ calls
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LAYER 2: SRV (LockFSM)
+    Processes password verification
+    Calculates state transitions
+    ↓ returns
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LAYER 1: SOFTWARE (Lab1_2_main)
+    Receives FSM output
+    ↓ calls
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LAYER 3: ECAL (LedDriver, LcdDriver)
+    Executes hardware commands
+    ├─ LcdDriver.Print("Access Granted!")
+    └─ LedDriver.On() [Green LED]
+    ↓ calls
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LAYER 4: MCAL (Arduino Functions)
+    Translates to low-level operations
+    ├─ digitalWrite(PIN_GREEN_LED, HIGH)
+    ├─ digitalWrite(PIN_LCD_RS, HIGH)
+    └─ digitalWrite(PIN_LCD_EN, HIGH)
+    ↓ calls
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LAYER 5: MCU (ATmega328P Registers)
+    Register modifications
+    ├─ PORTB |= (1 << PIN10)  [Green LED pin]
+    ├─ PORTD |= (1 << PIN11)  [LCD EN pin]
+    └─ Timer0 increments (millis counter)
+    ↓ controls
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LAYER 6: ECU (Physical Hardware)
+    Electrical signals activate devices
+    ├─ Green LED lights up (+5V on pin 10)
+    ├─ LCD receives data and displays text
+    └─ User observes visual feedback
+    ↓
+PHYSICAL WORLD
 ```
+
+#### Data Encapsulation & Layer Communication
+
+```
+Application → SRV:   char operation (menu selection)
+SRV → Application:   LockState, error flag, message string
+Application → ECAL:  Pin state, text to display
+ECAL → MCAL:         Hardware operation IDs (mapped to function calls)
+MCAL → MCU:          Register writes (DDRB, PORTB, etc)
+MCU → ECU:           Electrical signals (+5V or GND on GPIO pins)
+ECU → Physical World: LED illuminates, LCD displays text
+```
+
+#### Three-Level Architecture (Simplified View)
+
+For simplified understanding, these 6 layers can be grouped into 3 logical layers:
+
+```
+┌──────────────────────────────────────────────────────┐
+│            SOFTWARE LAYER (1-2)                      │
+│  Lab1_2_main + LockFSM (Application & Logic)         │
+├──────────────────────────────────────────────────────┤
+│            DRIVER LAYER (3-4)                        │
+│  ECAL Drivers + MCAL Arduino Functions               │
+├──────────────────────────────────────────────────────┤
+│          HARDWARE LAYER (5-6)                        │
+│  MCU (Processor) + ECU (Physical Components)          │
+└──────────────────────────────────────────────────────┘
+```
+
+This six-layer model provides comprehensive documentation of system organization while maintaining practical simplicity through optional three-layer grouping.
 
 ### 3.4 Behavioral Diagrams for Functionalities (7 points)
 
@@ -892,7 +1003,7 @@ Each module exposes a clean public interface through its header file, while impl
 
 #### 3.5.2 Architectural Design and System Organization
 
-The architectural design of the system is based on a clear separation between the application logic and peripheral drivers, organized in three distinct layers: MCAL (Microcontroller Abstraction Layer), ECAL (Electronic Control Abstraction Layer), and SRV (Service Layer).
+The architectural design of the system is based on a clear separation between the application logic and peripheral drivers, organized in a set of distinct layers: MCAL (Microcontroller Abstraction Layer), ECAL (Electronic Control Abstraction Layer), and SRV (Service Layer).
 
 **Application Layer (SRV):** The main module (Lab1_2_main.cpp) initializes the system and enters an infinite event loop listening for user input from the keypad. The application accepts user commands through the 4x4 membrane keypad, processes them through the FSM logic, and coordinates system responses through the LCD display and LED feedback mechanisms.
 
