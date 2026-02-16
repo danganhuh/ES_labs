@@ -3,7 +3,7 @@
  * @brief Main application for advanced menu lock system (Lab 1.2)
  *
  * Integrates FSM, keypad, LCD, and LED drivers for interactive menu-driven lock.
- * Includes serial communication for debugging and optional serial input.
+ * Uses printf for LCD output and scanf for keypad input.
  */
 
 #include <Arduino.h>
@@ -35,70 +35,54 @@ LcdDriver lcd(LCD_RS, LCD_EN, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
 char inputBuffer[32];
 int inputIndex = 0;
 bool inMenu = false;
+bool passwordPromptShown = false;
 unsigned long feedbackTime = 0;
 bool showingFeedback = false;
 bool feedbackWasShowing = false;
 
 void lab1_2_setup() {
-    // Initialize serial communication at 9600 baud for printf/scanf support
-    // This allows debugging messages and optional serial input
-    SerialStdioInit(9600);
-    
-    // Display startup message via serial
-    printf("=== Lab 1.2 - Smart Lock FSM ===\r\n");
-    printf("Initializing hardware...\r\n");
-    
-    // Initialize all hardware drivers
+    // Initialize all hardware drivers FIRST (before StdioInit)
     ledGreen.Init();
     ledRed.Init();
     lcd.Init();
     keypad.Init();
-    LockFSM_Init();             // Initialize the lock's finite state machine
-    
-    // Display initial LCD message
-    lcd.Print("Smart Lock", "Press * for menu");
-    
-    // Ensure LEDs start in off state
+    LockFSM_Init();
+
+    // Redirect printf to LCD, scanf from keypad ('#' = Enter)
+    StdioInit();
+
+    // Display startup via printf (output goes to LCD)
+    printf("Smart Lock Init\nPress * for menu\n");
+
     ledGreen.Off();
     ledRed.Off();
-    
-    // Confirm initialization via serial
-    printf("Lab 1.2 initialized successfully\r\n");
 }
 
 void triggerFeedback() {
-    // Set flags to show visual feedback (via LEDs) for 1 second
     showingFeedback = true;
     feedbackWasShowing = true;
     feedbackTime = millis();
 }
 
 void updateLEDs() {
-    // Check if feedback display period is still active (1 second timeout)
     bool feedbackActive = showingFeedback && (millis() - feedbackTime < 1000);
-    
+
     if (feedbackActive) {
-        // Display status via LED colors during feedback period
         if (LockFSM_WasLastOpError()) {
-            // Red LED: operation error
             ledGreen.Off();
             ledRed.On();
         } else if (LockFSM_GetState() == STATE_UNLOCKED) {
-            // Green LED: lock successfully unlocked
             ledGreen.On();
             ledRed.Off();
         } else {
-            // Red LED: locked or other state
             ledGreen.Off();
             ledRed.On();
         }
     } else {
-        // Turn off LEDs when not in feedback period
         ledGreen.Off();
         ledRed.Off();
-        // Restore default LCD message after feedback timeout
         if (feedbackWasShowing && !feedbackActive) {
-            lcd.Print("Press * for menu", "");
+            printf("Press * for menu\n");
             feedbackWasShowing = false;
         }
         showingFeedback = false;
@@ -106,53 +90,52 @@ void updateLEDs() {
 }
 
 void lab1_2_loop() {
-    // Read a single key press from the keypad (non-blocking, returns 0 if no key)
-    char key = keypad.GetKey();
-    
-    if (key) {
-        // '*' enters menu mode
-        if (key == '*') {
-            inMenu = true;
-            inputIndex = 0;
-            memset(inputBuffer, 0, sizeof(inputBuffer));
-            // Display menu options on LCD
-            lcd.Print("*0:Lock *1:Unlock", "*2:ChgPass *3:Stat");
-            printf("Menu activated\r\n");
-        } 
-        // '#' confirms selection in menu or input mode
-        else if (key == '#' && inMenu && inputIndex > 0) {
-            inputBuffer[inputIndex] = '\0';
-            char op = inputBuffer[0];
-            printf("Operation selected: %c\r\n", op);
-            // Send operation to FSM state machine
-            LockFSM_SelectOperation(op);
-            lcd.Print(LockFSM_GetMessage(), "");
-            triggerFeedback();              // Show LED feedback for 1 second
-            inputIndex = 0;
-            memset(inputBuffer, 0, sizeof(inputBuffer));
-            inMenu = false;
-        } 
-        // '#' confirms password/PIN input
-        else if (key == '#' && !inMenu && LockFSM_GetCurrentState() >= STATE_INPUT_UNLOCK) {
-            inputBuffer[inputIndex] = '\0';
-            printf("Input processed: %s\r\n", inputBuffer);
-            // Send password attempt to FSM
-            LockFSM_ProcessInput(inputBuffer);
-            lcd.Print(LockFSM_GetMessage(), "");
-            triggerFeedback();              // Show LED feedback for 1 second
-            inputIndex = 0;
-            memset(inputBuffer, 0, sizeof(inputBuffer));
-        } 
-        // Store key in input buffer for menu or password entry
-        else if (inMenu || (LockFSM_GetCurrentState() >= STATE_INPUT_UNLOCK && LockFSM_GetCurrentState() <= STATE_INPUT_CHANGE_NEW)) {
-            if (inputIndex < (int)sizeof(inputBuffer)-1) {
-                // Add character to buffer and display on LCD
-                inputBuffer[inputIndex++] = key;
-                lcd.SetCursor(0, 1);
-                lcd.Print("Cmd:", inputBuffer);
+    // Menu mode: show menu and read command via scanf (blocks until user presses #)
+    if (inMenu) {
+        // Single printf, no middle \n, so both lines display (16 chars each)
+        printf("*0:Lock *1:Open*2:ChgPass *3:St\n");
+        if (scanf("%31s", inputBuffer) >= 1 && inputBuffer[0] != '\0') {
+            LockFSM_SelectOperation(inputBuffer[0]);
+            printf("Cmd: %s\n%s\n", inputBuffer, LockFSM_GetMessage());
+            if (inputBuffer[0] == '1' || inputBuffer[0] == '2') {
+                ;  // FSM needs password; will scanf in next branch
+            } else {
+                triggerFeedback();
             }
         }
+        inMenu = false;
     }
-    // Update LED status based on FSM state and feedback timer
+    // FSM needs password input: prompt, then echo each key as pressed until #
+    else if (LockFSM_GetCurrentState() >= STATE_INPUT_UNLOCK &&
+             LockFSM_GetCurrentState() <= STATE_INPUT_CHANGE_NEW) {
+        if (!passwordPromptShown) {
+            printf("%s\n", LockFSM_GetMessage());
+            passwordPromptShown = true;
+            inputIndex = 0;
+            memset(inputBuffer, 0, sizeof(inputBuffer));
+        }
+        char key = keypad.GetKey();
+        if (key == '#') {
+            if (inputIndex > 0) {
+                inputBuffer[inputIndex] = '\0';
+                LockFSM_ProcessInput(inputBuffer);
+                printf("Code: %s\n%s\n", inputBuffer, LockFSM_GetMessage());
+                triggerFeedback();
+            }
+            passwordPromptShown = false;
+        } else if (key && key >= '0' && key <= '9' && inputIndex < (int)sizeof(inputBuffer) - 1) {
+            inputBuffer[inputIndex++] = key;
+            inputBuffer[inputIndex] = '\0';
+            printf("%s\n%s\n", LockFSM_GetMessage(), inputBuffer);
+        }
+    }
+    // Idle: detect '*' to enter menu (non-blocking)
+    else {
+        char key = keypad.GetKey();
+        if (key == '*') {
+            inMenu = true;
+        }
+    }
+
     updateLEDs();
 }

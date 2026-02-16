@@ -5,6 +5,9 @@
 
 #include "KeypadDriver.h"
 
+// Global keypad driver instance for scanf callback
+KeypadDriver* g_keypadDriver = nullptr;
+
 KeypadDriver::KeypadDriver(char (*userKeymap)[4], const byte* rows, const byte* cols, byte nRows, byte nCols)
     : rowPins(rows), colPins(cols), numRows(nRows), numCols(nCols), keymap(userKeymap), lastKey(0), lastKeyTime(0)
 {
@@ -13,6 +16,7 @@ KeypadDriver::KeypadDriver(char (*userKeymap)[4], const byte* rows, const byte* 
 
 void KeypadDriver::Init() {
     keypad = new Keypad(makeKeymap(keymap), rowPins, colPins, numRows, numCols);
+    g_keypadDriver = this;  // Store global reference for scanf callback
 }
 
 char KeypadDriver::GetKey() {
@@ -32,4 +36,14 @@ char KeypadDriver::GetKey() {
     }
     
     return 0;
+}
+
+char KeypadDriver::GetChar() {
+    // Blocking read - waits until a key is pressed
+    char key = 0;
+    while (key == 0) {
+        key = GetKey();
+        delay(10);  // Small delay to reduce CPU usage while waiting
+    }
+    return key;
 }
