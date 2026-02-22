@@ -1,0 +1,200 @@
+
+
+
+MINISTRY OF EDUCATION AND RESEARCH OF THE REPUBLIC OF MOLDOVA
+TECHNICAL UNIVERSITY OF MOLDOVA
+Faculty of Computers, Informatics, and Microelectronics
+Department of Software Engineering and Automation
+
+
+
+
+REPORT
+Laboratory work no. 2.1
+for the course "Embedded Systems"
+Topic: Multitasking with Operating Systems
+
+
+
+
+
+  Made by:                                                               St. gr. FAF - 232, Mihalevschi Alexandra
+  Verified by:                                              A. Martîniuc, univ. assistant
+
+
+
+
+                                         	
+Chișinău 2026
+1.	Domain Analysis
+a.	Purpose of the laboratory work
+Familiarization with the fundamental concepts of operating systems for embedded electronic systems, as well as their implementation and use in developing applications for microcontrollers (MCU). The laboratory work aims to create an application that runs sequentially or concurrently multiple tasks, using either bare-metal programming or a real-time operating system (RTOS,e.g., FreeRTOS). The application must demonstrate the methodology of scheduling, synchronization (provider/consumer model), and execution (preemptive or non-preemptive) of tasks, with clear documentation of the software architecture and data flow between tasks.
+b.	Objectives of the laboratory work
+-	Familiarize with scheduling and execution principles for tasks in an embedded system, both in sequential (bare-metal) and concurrent (RTOS/FreeRTOS) modes.
+-	Understand and apply recurrence and offsets for processor utilization optimization.
+-	Implement synchronization and communication mechanisms between tasks, including the provider/consumer model and buffer usage.
+-	Analyze the advantages and limitations of sequential versus preemptive multitasking execution. 
+-	Document the software architecture, present block diagrams and electrical schematics as part of the design methodology.
+
+c.	Problem definition
+Design and implement a microcontroller-based smart lock system that provides a menu-driven interface for lock control, password management, and status reporting through a keypad input, LCD display, and LED feedback indicators.
+Functional specifications:
+FR-1.0: Command Interface
+FR-1.1: System shall accept '*' key to enter menu mode
+FR-1.2: System shall display menu options upon '' press: "0:Lock *1:Unlock *2:ChgPass *3:Stat"
+FR-1.3: System shall accept '#' key to execute selected command
+FR-2.0: Lock/Unlock Operations
+FR-2.1: Command  shall unconditionally change lock state to LOCKED
+FR-2.2: Command  shall request password input before unlocking
+FR-2.3: System shall compare entered password with stored password (case-sensitive)
+FR-2.4: Correct password shall change state to UNLOCKED; incorrect shall remain LOCKED and display error
+FR-3.0: Password Management
+FR-3.1: Command  shall initiate password change sequence
+FR-3.2: System shall request old password, new password (in sequence)
+FR-3.3: System shall update password only if old password matches
+FR-3.4: Password storage shall be non-volatile (in static memory for this implementation)
+FR-4.0: Status Display
+FR-4.1: Command  shall display current lock status (LOCKED/OPEN)
+FR-4.2: Status display shall return to menu after completion
+FR-5.0: User Feedback
+FR-5.1: LCD shall display current state/prompt on 2-line display
+FR-5.2: User input shall be echoed to LCD during entry
+FR-5.3: Operation results shall be displayed (success/error messages)
+FR-5.4: Green LED shall illuminate for 1 second on successful operations
+FR-5.5: Red LED shall illuminate for 1 second on errors/failures
+FR-5.6: Feedback timing shall be non-blocking (not delay-based)
+
+Non-functional specifications:
+NFR-1.0: Performance
+NFR-1.1: System response latency shall be < 100ms (target: < 50ms)
+NFR-1.2: Keypad debounce delay shall be 20ms ± 5ms
+NFR-1.3: LED feedback duration shall be 1000ms ± 100ms
+NFR-1.4: Real-time scheduling: no blocking delays during interactive mode
+NFR-2.0: Reliability
+NFR-2.1: System shall not miss valid key presses
+NFR-2.2: Password comparison shall be case-sensitive and exact-match
+NFR-2.3: State machine shall prevent invalid transitions
+NFR-2.4: System shall recover from invalid input without data loss
+NFR-3.0: Resource Efficiency
+NFR-3.1: RAM usage shall not exceed 40% (< 819 bytes)
+NFR-3.2: Flash usage shall not exceed 50% (< 16KB)
+NFR-3.3: No dynamic memory allocation in critical paths
+NFR-3.4: LEDs off by default (no power waste)
+NFR-4.0: Maintainability
+NFR-4.1: Code shall be organized in modular drivers (ECAL) and FSM (SRV)
+NFR-4.2: Hardware layer (MCAL) shall be isolated from business logic
+NFR-4.3: Each module shall have clear, documented public interfaces
+NFR-4.4: Code comments shall explain non-obvious logic (20-30% comment density)
+NFR-5.0: Scalability
+NFR-5.1: Drivers shall be reusable across multiple projects
+NFR-5.2: FSM shall be extensible for additional operations
+NFR-5.3: Hardware pin assignments shall be easily configurable
+NFR-5.4: Password length shall be configurable (currently 10 bytes max)
+
+System Constraints:
+- Platform: Arduino Uno (ATmega328P, 16MHz, 2KB RAM, 32KB Flash)
+- Input device: 4x4 matrix keypad (16 total keys)
+- Display: 16x2 character LCD (HD44780-compatible)
+- Output indicators: Red LED (error), Green LED (success)
+- Development tools: PlatformIO IDE, VS Code, Wokwi simulator
+d.	Description of the Technologies Used and the Context 
+The system is structured using a Finite State Machine (FSM) architecture, where each state represents a distinct operating condition such as MENU, LOCKED, UNLOCKED, INPUT, or ERROR. Transitions between states occur based on events like keypad input or password verification results. This approach ensures deterministic behavior, clear code structure, and easy validation of all possible states and transitions, making it well-suited for embedded applications.
+User input is acquired through a 4×4 matrix keypad, which uses 4 rows and 4 columns to detect 16 keys with only 8 GPIO pins. The scanning method activates one row at a time and reads the column lines to detect pressed keys. To eliminate false triggering caused by mechanical switch bounce (100–500 μs), software debouncing is implemented using a ~20 ms validation delay and key state comparison.
+The system follows a non-blocking, event-driven design using the millis() function instead of delay(). This allows continuous keypad monitoring, LED updates, and timer-based state management within the main loop. Visual feedback is provided by a 2×16 LCD controlled via the HD44780 4-bit interface. Each character write takes approximately 40 μs, enabling fast screen updates while the system continues processing input. A driver abstraction layer simplifies display control through a high-level print interface.
+e.	Presentation of Hardware and Software Components and Their Roles
+The system is built around an Arduino Uno (ATmega328P, 16 MHz), which executes the FSM logic and manages all peripherals. User input is provided through a 4×4 matrix keypad, while a 16×2 HD44780-compatible LCD displays menus, prompts, and status messages. Visual feedback is ensured by a red LED (error/locked state) and a green LED (success/unlocked state), each protected by 220 Ω current-limiting resistors. The circuit is assembled on a breadboard using jumper wires and powered via USB [1].
+Software development is carried out in Visual Studio Code with PlatformIO. The Arduino framework handles hardware abstraction, while the Keypad and LiquidCrystal libraries manage keypad scanning and LCD control. Testing is supported by the Wokwi simulator, and standard C/C++ functions [3] are used for string processing and logic implementation.
+f.	System Architecture Explanation and Justification of the Solution
+The system architecture follows a layered and modular design approach. The application layer (main program) is responsible for interpreting user commands and coordinating system behavior. The driver layer contains reusable modules for peripheral control, such as the LED driver and the serial STDIO driver. Beneath this layer lies the hardware abstraction provided by the Arduino framework, which interacts directly with the microcontroller’s hardware registers. This separation of concerns ensures improved maintainability, scalability, and reusability.
+The choice of using STDIO redirected to the serial interface is justified by the need for structured and formatted communication. Functions such as printf() offer flexibility and clarity compared to basic serial print methods. Additionally, the modular organization into .h and .cpp files ensures that peripheral functionalities can be reused in future laboratory works, aligning with best practices in embedded software engineering [2].
+g.	Definition of Test Scenarios and Validation Criteria
+For the smart lock system, test scenarios are organized into categories: (1) Functional validation testing all operational modes (menu navigation, lock/unlock commands, password change, status display), (2) Non-functional testing addressing performance metrics (response latency <100ms, debounce delay 20±5ms, LED timing 1000±100ms), (3) Behavioral testing verifying FSM state transitions and error handling, and (4) Edge case testing covering boundary conditions (empty password input, invalid commands, rapid key presses). Each scenario includes preconditions (initial system state), execution steps (user actions), expected results (system behavior and outputs), and acceptance criteria (pass/fail determination). This comprehensive approach ensures not only that the system works correctly under normal conditions but also behaves robustly when encountering unexpected or extreme inputs.
+Validation criteria provide quantifiable benchmarks against which test results are measured, ensuring objective assessment of system compliance. Functional criteria evaluate whether commands produce correct state changes: unlock with correct password must transition to UNLOCKED state with green LED feedback and "Access Granted!" message within 50ms. Performance criteria use instrumentation tools: latency measured via timestamp comparison (millis() function), debounce effectiveness determined by input logging (counting registered keypresses vs. physical presses), and LED timing verified with oscilloscope or visual observation. Reliability criteria assess robustness: system stability evaluated through 5-minute continuous operation without hangs or crashes, error recovery tested by providing invalid inputs and verifying graceful degradation without data loss. Memory efficiency validated through compiler output reports (RAM usage <40%, Flash usage <50%), and state machine correctness verified by manually traversing all possible state transitions and confirming no invalid transitions are possible. This multi-dimensional validation framework (functional, performance, reliability, resource) provides comprehensive confidence that the implementation meets all laboratory requirements.
+h.	Technological Context and Industry Relevance
+Smart lock systems represent a significant growth sector in:
+- Home Automation: Smart locks integrated with voice assistants and mobile apps
+- Commercial Access Control: Keycard and PIN-based entry systems for office buildings
+- IoT Security: Authentication layers for smart home devices and connected appliances
+- Industrial Equipment: Lockout-tagout (LOTO) systems for machinery safety
+The principles demonstrated in this laboratory work (menu-driven interfaces, FSM logic, password management, multi-peripheral coordination) directly transfer to professional access control systems. Modern smart locks often implement similar FSM architectures for handling menu navigation, password entry, and unlock sequences, though with enhanced security features (encryption, biometrics) and connectivity (WiFi, Bluetooth).
+i.	Relevant Case Study Demonstrating Applicability
+Modern smart home locks implement functionality similar to the proposed laboratory system but at a larger scale. They typically include a physical keypad for PIN entry, LED or LCD indicators for status feedback, and smartphone application support for remote access. Many systems also integrate with voice assistants and maintain internal logic for password verification, keypad debouncing (20–50 ms), state tracking (locked, unlocked, jammed), event logging, and battery monitoring with low-power warnings.
+Commercial office entry systems expand on this concept by adding features such as card readers, network connectivity for centralized reporting, multi-level access control, emergency override mechanisms, and full audit trails of entry events. Their operation is commonly structured around a Finite State Machine (FSM), including states such as IDLE, READING_PIN, VERIFYING, GRANTING_ACCESS, DENYING_ACCESS, and ERROR, ensuring deterministic and secure behavior.
+Automotive vehicle locking systems follow similar embedded design principles. They support push-button lock/unlock via key fobs, configurable door and climate settings, time-based auto-lock functions, and emergency unlock procedures, all integrated with the vehicle’s central computer. Timing requirements are strict, with lock/unlock responses typically under 100 ms, debouncing intervals of 20–50 ms, short LED feedback durations, and deterministic state transitions—characteristics that align closely with the laboratory implementation.
+2.	System Design
+The modular implementation (Figure 1) respects the principle of separation between interface and implementation. Header files (.h) declare classes, functions, and public methods available to other modules, serving as contracts between components. Source files (.cpp) contain the actual implementation logic, including initialization routines and command handling procedures [1]. 
+  
+Figure 1: Structure of the laboratory work
+The architectural design of the system is based on a clear separation between the application logic and peripheral drivers, organized in a set of distinct layers: MCAL (Microcontroller Abstraction Layer), ECAL (Electronic Control Abstraction Layer), SRV (Service Layer), MCU and ECU. The periferals are interacting with the GPIO drivers and modules, as presented in the following figure (Figure 2).
+
+ 
+Figure 2: Architecture schema
+The diagram below (Figure 3) shows how the system looks from the perspective of the user. They press buttons, and between the results, the components interact internally, and return a visual feedback depending on the situation.
+
+ 
+Figure 3: User interaction 
+
+The next diagram, the flowchart (Figure 4) illustrates the operational, beginning when a user initiates the process by pressing the "*" key to display the main menu. From the primary decision node, the user can select one of four distinct functional paths using specific codes: locking the system immediately (0#), toggling the lock status by entering a password (1#), updating the system password (2#), or viewing system statistics (3#).
+The most complex path, the password-entry sequence (1#), utilizes a secondary decision diamond to validate the user's input. If the password is correct, the system triggers the "Unlock system" state and activates a green LED; if incorrect, it maintains the "Lock system" state and activates a red LED. Other administrative functions, such as the password reset flow, require the user to input both the old and new credentials. The final merge states at the bottom of the diagram indicate logical merge points where the system returns to a standby state or resets for the next user interaction.
+ 
+Figure 4: Activity diagram
+This state diagram (Figure 5) represents the menu-driven logic of the electronic lock system. The system starts in STATE_MENU, where the user selects one of several operations (Op ‘0’–‘3’) using the keypad: Op ‘0’ → LOCKED: Executes the locking action immediately. If the operation is successful, the Red LED is turned on to indicate the locked state. Op ‘1’ → INPUT_UNLOCK: Prompts the user to enter a password to unlock. The system checks the password: If correct, the state transitions to UNLOCKED, the Green LED is lit, and access is granted. If incorrect, the system signals an error (Red LED) and returns to the menu. Op ‘2’ → INPUT_CHANGE_OLD: Prompts the user to enter the current password to authorize a password change. If validated, the system moves to INPUT_CHANGE_NEW to set a new password; confirmation triggers Green LED feedback, while any error (incorrect old password) triggers the Red LED. Op ‘3’ → SHOW_STATUS: Instantly displays the current system status. If a password check is required (e.g., for restricted status view), the diagram includes a validation step before showing the result. After completing any operation, the system returns to STATE_MENU, ready for the next user input. This FSM ensures deterministic behavior, clear visual feedback, and secure handling of password-protected operations.
+ 
+Figure 5: State diagram for the system
+The sequence diagram (Figure 6) maps the communication between the user, physical hardware, and the system software during a code-entry event. The process initiates with the User inputting a code via the Keypad, which is then relayed to the Lab1_2.cpp logic file for validation. Upon verification, the software transmits a command set to the Arduino microcontroller. The Arduino then coordinates the hardware response by sending a power impulse to the LCD to print a status message while concurrently signaling the software to update the internal system state. The following sequence diagram is true to any state of the system
+ 
+Figure 6: Sequence diagram of user action
+The electrical implementation (Figure 7) consists of an Arduino Uno microcontroller serving as the central processor, with a 4x4 Keypad connected to analog pins A0–A3 and digital pins 6–9 for user input. The visual output is handled by an LM016L LCD wired to digital pins 5 through 2, providing real-time status messages. Two LEDs, Red and Green, are connected to digital pins 13 and 10 through 220Ω resistors to limit current and protect the components, while their cathodes are tied to ground. 
+ 
+Figure 7: Modelated electronic schema
+The system's operational logic (Figure 8) is divided into three functional sub-processes: the LED Feedback Loop manages visual signaling by toggling an LED based on the lock status for a duration under 1000ms. The LCD Menu Navigation handles the user interface, initializing with a "Smart Lock" prompt and transitioning to a menu that responds to numerical inputs 0–3. Finally, the Key Input Validation maintains a polling state that waits for a keypress and executes commands only after detecting the "#" termination character.
+ 
+Figure 8: Behavior diagrams for each peripheral
+
+3.	Results
+The system was tested using the PlatformIO and Wokwi [4] simulator in VS for the Arduino Mega 2560, on hardware for the Arduino Uno. When the power is sent to the hardware, the LCD shows appropriate welcome message and waits for ‘*’ key to be pressed. When the key is pressed, menu is shown, and depending on the user actions, an appropriate message is displayed as response on LCD and the respective color LED is on (depending on the locked/unlocked status of the system). Then, the system will return to waiting on appropriate code. The testing requirements definition is shown in the following table (Table 1). 
+Table 1: Testing requirements
+ID	Test category	Test description	Expected result
+T1	Initialization	Power on system	LCD shows initial message; system in LOCKED state; Red LED ON, Green LED OFF
+T2	Lock Operation	Execute *0#
+
+	LCD displays "System Locked"; Red LED active; state = LOCKED
+T3	Unlock (Valid)	Enter correct password (1234)
+
+	LCD shows "Access Granted"; Green LED active; state = UNLOCKED
+T4	Unlock (Invalid)	Enter wrong password	LCD shows "Wrong Code!"; Red LED active; state remains LOCKED
+T5	Change Pwd (Valid)	Enter correct old password and new password	LCD confirms change; Green LED indicates success; password updated
+T6	Change Pwd (Invalid)	Enter wrong old password	LCD shows error; Red LED indicates failure; password unchanged	
+T7	Status Display	Execute *3#	LCD displays correct system state (LOCKED/UNLOCKED); no unintended LED activity
+T8	LED Feedback	Trigger success and error operations	LEDs activate correctly and remain on ~1 second
+T9	Keypad & LCD Response	Press keys rapidly	LCD updates immediately; no duplicate/missed inputs
+T10	Reliability	Perform repeated operations over time	System operates without crashes or abnormal behavior
+
+Next images are the results of the testing, that includes both simulations (Figure 9-13) and real hardware (Figure 14). All video footage are in the drive: 
+https://drive.google.com/drive/folders/1irxzplvWRQgibA78ml7MvxLl461tc6hT?usp=sharing
+ 
+Figure 9: Wrong code result
+ 
+Figure 10: Code introduction
+ 
+Figure 11: Show status of the system
+  
+Figure 12: Status of the system: OPEN
+
+ 
+Figure 13: Access granted
+ 
+Figure 14: Initialization on hardware
+4.	Conclusions
+The implemented smart lock system operates reliably within the constraints of a simple embedded application based on the Arduino platform. The system supports core functionalities such as locking, unlocking using a password, password modification, and status display. While the current implementation provides essential access control features, it does not include advanced capabilities such as persistent password storage (e.g., EEPROM), non-blocking timing mechanisms, or extended security mechanisms. Future improvements could include implementing non-blocking state management (removing delay-based timing), adding EEPROM-based password storage, integrating a buzzer for audio feedback, or expanding the command structure for additional security features.
+The objectives of the laboratory work were successfully achieved. The principles of embedded system design, digital input processing (keypad), and hardware output control (LCD and LEDs) were understood and applied in practice. The system demonstrates clear separation between input handling, command processing, state management, and output feedback, resulting in a modular and maintainable architecture. The application correctly interprets user commands entered through the keypad and controls visual feedback components accordingly.
+
+During the preparation of this report, it was used ChatGPT, Copilot and other AI-based assistance tools for generating and consolidating textual and code and partially architecture design content. The generated information was reviewed, validated, and adjusted according to the laboratory work requirements.
+Bibliography
+[1] R. L. Boylestad and L. Nashelsky, Electronic Devices and Circuit Theory, 11th ed. Upper Saddle River, NJ, USA: Pearson Education, 2013.
+[2] J. G. Ganssle, The Art of Designing Embedded Systems, 2nd ed. Burlington, MA, USA: Elsevier, 2007.
+[3] M. Barr, Embedded C Programming and the Atmel AVR, 2nd ed. Oxford, U.K.: Newnes, 2006.
+[4] “Mega 2560 Rev3 | Arduino Documentation.”. [Online]. Available: https://docs.arduino.cc/hardware/mega-2560/
+[5] “Welcome to Wokwi! | Wokwi Docs.” Accessed: [Online]. Available: https://docs.wokwi.com/
+[6] GitHub repository. Available: https://github.com/danganhuh/ES_labs
+

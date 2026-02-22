@@ -1,14 +1,15 @@
 /**
  * @file SerialStdioDriver.cpp
  * @brief ECAL Layer - Serial/LCD/Keypad Driver Implementation
- * 
- * Implements STDIO redirection for both serial and hardware (LCD/Keypad) I/O.
+ *
+ * Provides simple Serial I/O wrappers and LCD/Keypad I/O redirection.
  * Uses Arduino MCAL hardware drivers through LcdDriver and KeypadDriver.
- * 
+ *
  * Features:
- * - SerialStdioInit(): Redirects printf() to serial, scanf() from serial
+ * - SerialStdioInit(): Initialises UART via Serial.begin()
+ * - SerialReadLine(): Reads a newline-terminated line from Serial
  * - StdioInit(): Redirects printf() to LCD, scanf() from Keypad
- * 
+ *
  * Architecture: Lab -> StdioDriver -> UART or LCD/Keypad -> MCAL -> Hardware
  */
 
@@ -22,70 +23,79 @@ extern LcdDriver* g_lcdDriver;
 extern KeypadDriver* g_keypadDriver;
 
 // ============================================================================
-// SERIAL-BASED STDIO FUNCTIONS (for serial communication)
+// SERIAL-BASED I/O FUNCTIONS (for serial communication)
 // ============================================================================
 
+// ============================================================================
+// Static FILE streams for UART stdio redirection
+// ============================================================================
+
+static FILE UartStdOut;
+
 /**
- * @brief Callback function for printf redirection to Serial
- * 
- * This function is called by printf() to output each character.
- * It uses the Arduino MCAL Serial.write() to send to UART.
- * 
- * @param c Character to write
- * @param stream FILE stream (unused)
- * @return 0 on success
+ * @brief Callback: write one character to the UART (used by printf)
  */
-static int SerialPutChar(char c, FILE *stream)
+static int UartPutChar(char c, FILE *stream)
 {
-    Serial.write(c);  // MCAL: Write to Arduino serial
+    Serial.write(c);
     return 0;
 }
 
 /**
- * @brief Callback function for scanf redirection from Serial
- * 
- * This function is called by scanf() to read each character.
- * It uses the Arduino MCAL Serial.read() to receive from UART.
- * Blocks until data is available on the serial port.
- * 
- * @param stream FILE stream (unused)
- * @return Character read from serial
+ * @brief Callback: read one character from the UART (used by scanf)
+ *        Blocks until a byte is available.
  */
-static int SerialGetChar(FILE *stream)
+static int UartGetChar(FILE *stream)
 {
-    // Block until data available on serial port
     while (!Serial.available()) {}
-    // Read and return one byte from UART
-    return Serial.read();  // MCAL: Read from Arduino serial
+    return Serial.read();
 }
 
-// Static FILE structures for serial redirection
-static FILE SerialStdOut;
-static FILE SerialStdIn;
-
 /**
- * @brief Initialize STDIO redirection to Serial port
- * 
- * Sets up:
- * - Arduino UART communication at specified baud rate
- * - Redirects stdout to serial port for printf() support
- * - Redirects stdin to serial port for scanf() support
- * 
+ * @brief Initialize the Serial port and redirect printf/scanf to UART
+ *
+ * Opens the UART at the requested baud rate, waits until the
+ * host-side serial monitor has connected, then hooks stdout/stdin
+ * to the UART so that printf() and scanf() work over serial.
+ *
  * @param baudRate Baud rate (e.g., 9600)
  */
 void SerialStdioInit(unsigned long baudRate)
 {
-    // Initialize UART at specified baud rate
-    Serial.begin(baudRate);         // MCAL: Initialize serial
-    while (!Serial) {}              // Wait for serial connection
+    Serial.begin(baudRate);   // MCAL: Initialize serial
+    while (!Serial) {}        // Wait for serial connection
 
-    // Redirect stdout (printf) to serial port
-    fdev_setup_stream(&SerialStdOut, SerialPutChar, NULL, _FDEV_SETUP_WRITE);
-    stdout = &SerialStdOut;         // All printf() calls now go to serial
+    // Redirect printf (stdout) and scanf (stdin) to UART
+    fdev_setup_stream(&UartStdOut, UartPutChar, UartGetChar, _FDEV_SETUP_RW);
+    stdout = &UartStdOut;
+    stdin  = &UartStdOut;
+}
 
-    // Redirect stdin (scanf) to serial port
-    fdev_setup_stream(&SerialStdIn, NULL, SerialGetChar, _FDEV_SETUP_READ);
-    stdin = &SerialStdIn;           // All scanf() calls now read from serial
+/**
+ * @brief Read one line from Serial into a caller-supplied buffer
+ *
+ * Blocks until a newline (\\n) or carriage-return (\\r) is received,
+ * or until maxLen-1 characters have been stored.  The terminating
+ * newline/carriage-return is NOT stored.  The buffer is always
+ * null-terminated.
+ *
+ * @param buf     Destination buffer
+ * @param maxLen  Size of buf (including space for the null terminator)
+ */
+void SerialReadLine(char* buf, int maxLen)
+{
+    int index = 0;
+    while (index < maxLen - 1)
+    {
+        while (!Serial.available()) {}       // block until a byte arrives
+        char c = static_cast<char>(Serial.read());
+        if (c == '\n' || c == '\r')
+        {
+            break;                           // end of line
+        }
+        buf[index++] = c;
+    }
+    buf[index] = '\0';
 }
 
 // ============================================================================

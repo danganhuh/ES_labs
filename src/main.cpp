@@ -14,6 +14,7 @@
  */
 
 #include <Arduino.h>
+#include <avr/wdt.h>
 
 // ============================================================================
 // CONFIGURATION: Change this to switch between labs
@@ -21,7 +22,8 @@
 // Simply change the value below to select which lab to run:
 //   1  = Lab 1.1 (Serial LED Control with printf/scanf)
 //   12 = Lab 1.2 (Smart Lock FSM with Keypad/LCD + serial debug)
-#define SELECTED_LAB 12         // Options: 1 (Lab 1.1), 12 (Lab 1.2), 2, 3, etc.
+//   2  = Lab 2   (Button Duration Monitor – sequential bare-metal scheduler)
+#define SELECTED_LAB 2          // Options: 1 (Lab 1.1), 12 (Lab 1.2), 2 (Lab 2)
 // ============================================================================
 
 #if SELECTED_LAB == 1
@@ -34,6 +36,12 @@
     void lab1_2_loop();
 #endif
 
+#if SELECTED_LAB == 2
+    // For Lab 2, declare the functions that are in Lab2/Lab2_main.cpp
+    void lab2_setup();
+    void lab2_loop();
+#endif
+
 /**
  * @brief Arduino setup() - Called once at startup
  * 
@@ -41,12 +49,18 @@
  */
 void setup()
 {
+    wdt_disable();  // Prevent bootloader WDT reset loop flooding serial
+
 #if SELECTED_LAB == 1
     Lab1_Setup();
 #endif
 
 #if SELECTED_LAB == 12
     lab1_2_setup();
+#endif
+
+#if SELECTED_LAB == 2
+    lab2_setup();
 #endif
 }
 
@@ -63,5 +77,9 @@ void loop()
 
 #if SELECTED_LAB == 12
     lab1_2_loop();
+#endif
+
+#if SELECTED_LAB == 2
+    lab2_loop();
 #endif
 }

@@ -12,8 +12,8 @@
  */
 
 #include <Arduino.h>
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "../led/LedDriver.h"
 #include "../drivers/SerialStdioDriver.h"
@@ -39,16 +39,16 @@ static void ProcessCommand(char *command)
     if (strcmp(command, "led on") == 0)
     {
         StatusLed.On();  // Turn LED on via ECAL driver
-        printf("LED turned ON\r\n");
+        printf("LED turned ON\n");
     }
     else if (strcmp(command, "led off") == 0)
     {
         StatusLed.Off();  // Turn LED off via ECAL driver
-        printf("LED turned OFF\r\n");
+        printf("LED turned OFF\n");
     }
     else
     {
-        printf("Invalid command. Use: led on | led off\r\n");
+        printf("Invalid command. Use: led on | led off\n");
     }
 }
 
@@ -62,41 +62,30 @@ static void ProcessCommand(char *command)
  */
 void Lab1_Setup()
 {
-    SerialStdioInit(9600);  // Initialize serial at 9600 baud (ECAL)
+    SerialStdioInit(9600);  // Initialize serial at 9600 baud (ECAL), redirects printf/scanf
     StatusLed.Init();       // Initialize LED pin (ECAL)
 
     // Display welcome message
-    printf("=== Lab 1.1 - Serial STDIO LED Control ===\r\n");
-    printf("Available commands:\r\n");
-    printf("led on\r\n");
-    printf("led off\r\n\r\n");
+    printf("=== Lab 1.1 - Serial STDIO LED Control ===\n");
+    printf("Available commands:\n");
+    printf("led on\n");
+    printf("led off\n");
+    printf("\n");
 }
 
 /**
  * @brief Main loop for Lab 1
  * 
  * Continuously waits for serial input and processes commands.
- * Uses scanf to read input directly from serial.
+ * Uses SerialReadLine to read a full command line from the serial monitor.
  */
 void Lab1_Loop()
 {
     char command[BufferSize];
-    char action[BufferSize];
 
-    // Read first word from serial input using scanf
-    // scanf blocks until data is available and a space/newline is received
-    scanf("%63s", command);
-    
-    // Check if we need to read a second word (e.g., "led on", "led off")
-    if (strcmp(command, "led") == 0)
-    {
-        // Read the action word (on/off)
-        scanf("%63s", action);
-        // Concatenate into single command string for processing
-        strcat(command, " ");
-        strcat(command, action);
-    }
-    
+    // Read a full line from the serial monitor (blocks until \n received)
+    scanf(" %63[^\n]", command);
+
     // Parse and execute the complete command
     ProcessCommand(command);
 }
