@@ -49,10 +49,17 @@ void ButtonDriver::Init()
 {
     pinMode(_pin, _useInternalPullup ? INPUT_PULLUP : INPUT);
 
-    int rawValue = digitalRead(_pin);
-    _debouncedState = _activeLow ? (rawValue == LOW) : (rawValue == HIGH);
-    _sampleCount = 0;
-    _releaseFlag = false;
+    // Do NOT read the pin immediately here: the internal pull-up resistor
+    // needs a few microseconds to pull the line to its idle level.  Reading
+    // too early can latch _debouncedState to the wrong value (e.g. "pressed")
+    // and make the button appear permanently active at start-up.
+    // Instead, always start as "not pressed" and let the debounce state
+    // machine settle to the real state within 5 x 20 ms = 100 ms.
+    _debouncedState = false;
+    _sampleCount    = 0;
+    _releaseFlag    = false;
+    _pressStartMs   = 0;
+    _lastDurationMs = 0;
 }
 
 /**

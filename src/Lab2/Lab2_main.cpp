@@ -5,28 +5,26 @@
  * =============================================================================
  * TASK DESCRIPTION
  * =============================================================================
- * Implements a button press monitoring application structured as 3 sequential
- * bare-metal tasks managed by a timer-interrupt-driven scheduler.
  *
  * Task 1 – Button Detection & Duration Measurement (every 20 ms, offset 0 ms)
  *   • Calls ButtonDriver::Update() for non-blocking debounce.
- *   • On button release: measures press duration (ms), classifies short/long.
+ *   • On button release: measures press duration, classifies short/long.
  *   • Publishes press event and duration to shared variables (provider role).
- *   • Notifies via printf: "[T1] Press detected: <N> ms (SHORT|LONG)".
+ *   • Notifies via printf: "[T1] Press: <N> ms (SHORT|LONG)".
  *
- * Task 2 – Statistics & LED Blink (every 50 ms, offset 10 ms)
+ * Task 2 – Statistics & LED Signalling (every 50 ms, offset 10 ms)
  *   • Consumer of press events produced by Task 1.
- *   • On new press: increments counters, accumulates total duration.
- *   • Short press: schedules  5 LED blinks (10 toggles × 50 ms = 500 ms).
- *   • Long  press: schedules 10 LED blinks (20 toggles × 50 ms = 1 000 ms).
- *   • Each invocation advances the blink state machine by one toggle (non-blocking).
+ *   • Short press: GREEN LED on, RED LED off, yellow blinks  5 times.
+ *   • Long  press: RED   LED on, GREEN LED off, yellow blinks 10 times.
+ *   • Yellow LED is ON while button is held (no blinks pending).
+ *   • After release: yellow blinks 5 (short) or 10 (long) times.
  *
  * Task 3 – Periodic Report via printf (every 10 000 ms, offset 100 ms)
- *   • Prints via printf: total presses, short, long, average duration.
+ *   • Prints: total presses, short, long, average duration.
  *   • Resets all statistics counters after printing.
  *
  * =============================================================================
- * SCHEDULER – Part 1: Non-Preemptive Bare-Metal Sequential OS
+ * SCHEDULER – Non-Preemptive Bare-Metal Sequential OS
  * =============================================================================
  * • Timer 1 (ATmega328P) generates a 1 ms CTC interrupt (ISR sets g_sysTick).
  * • Main loop detects the tick flag and calls os_seq_scheduler_loop().
@@ -57,7 +55,9 @@
  *  Component      | Arduino Pin | Notes
  * ----------------|-------------|-------------------------------------------
  *  Push-button    |  3          | INPUT_PULLUP, active-low (button to GND)
- *  Green LED      |  10         | 220 Ω series resistor → GND
+ *  Green LED      |  10         | Short-press indicator
+ *  Red   LED      |  11         | Long-press  indicator
+ *  Yellow LED     |  12         | Press-active (steady) + blink count signal
  *  Serial STDIO   |  TX/RX (0,1)| 9600 baud – printf via SerialStdioInit
  *
  * Architecture: APP (main.cpp) → SRV (Lab2) → ECAL (Drivers) → MCAL (Arduino)
@@ -76,23 +76,24 @@
 // Pin Configuration
 // ============================================================================
 
-static const uint8_t BTN_PIN  = 3;  ///< Push-button (INPUT_PULLUP, active low)
-static const uint8_t LED_PIN  = 10; ///< Green LED – visual feedback (single LED)
+static const uint8_t BTN_PIN        = 3;   ///< Push-button (INPUT_PULLUP, active low)
+static const uint8_t LED_GREEN_PIN  = 10;  ///< Green LED  – short press indicator
+static const uint8_t LED_RED_PIN    = 11;  ///< Red   LED  – long  press indicator
+static const uint8_t LED_YELLOW_PIN = 12;  ///< Yellow LED – press-active + blink
 
 // ============================================================================
 // Scheduler Configuration
 // ============================================================================
 
-/** Task recurring period in ms */
-#define REC_BUTTON   20      ///< Task 1: 20 ms – debounce needs 5 × 20 ms = 100 ms
-#define REC_BLINK    50      ///< Task 2: 50 ms – one blink-toggle per call
-#define REC_REPORT   10000   ///< Task 3: 10 s  – periodic statistics report
-#define DEBUG_BTN_CHECK_TIMEOUT_MS 5000  ///< Setup debug button check window
+#define REC_BUTTON  20       ///< Task 1: 20 ms
+#define REC_STATS   50       ///< Task 2: 50 ms – one blink-toggle per call
+#define REC_REPORT  10000    ///< Task 3: 10 s
 
-/** Task initial offset in ms (delay before first execution) */
-#define OFFS_BUTTON  0       ///< Task 1: no offset – runs at tick 0
-#define OFFS_BLINK   10      ///< Task 2: 10 ms offset – interleaved with Task 1
-#define OFFS_REPORT  100     ///< Task 3: 100 ms offset – startup noise margin
+#define OFFS_BUTTON 0        ///< Task 1: no offset
+#define OFFS_STATS  10       ///< Task 2: 10 ms – interleaved with Task 1
+#define OFFS_REPORT 100      ///< Task 3: 100 ms – startup noise margin
+
+#define SHORT_PRESS_THRESHOLD_MS 500UL
 
 // ============================================================================
 // Task Context Structure  (Section 3.1 – optimised variant)
@@ -118,9 +119,8 @@ enum TaskId
     MAX_OF_TASKS
 };
 
-// Forward declarations of task functions
 static void Task1_ButtonMonitor(void);
-static void Task2_StatsAndBlink(void);
+static void Task2_StatsAndLeds(void);
 static void Task3_PeriodicReport(void);
 
 /** Global task table (initialised in os_seq_scheduler_setup) */
@@ -130,8 +130,10 @@ static Task_t tasks[MAX_OF_TASKS];
 // Hardware Driver Instances  (ECAL layer – reused from project drivers)
 // ============================================================================
 
-static LedDriver    led   (LED_PIN);  ///< Single green LED for all visual feedback
-static ButtonDriver button(BTN_PIN, true, true);
+static LedDriver    ledGreen (LED_GREEN_PIN);
+static LedDriver    ledRed   (LED_RED_PIN);
+static LedDriver    ledYellow(LED_YELLOW_PIN);
+static ButtonDriver button   (BTN_PIN, true, true); ///< active-low, INPUT_PULLUP
 
 // ============================================================================
 // Shared Variables  (inter-task communication via global setter/getter pattern)
@@ -149,11 +151,13 @@ static volatile uint16_t g_longPresses   = 0;  ///< Presses 500 ms or longer
 static volatile uint32_t g_totalDuration = 0;  ///< Accumulated press duration (ms)
 
 // ============================================================================
-// Task 2 private state  (blink state machine – must persist between calls)
+// Task 2 private state
 // ============================================================================
 
-/** Number of remaining LED toggle steps (2 toggles = 1 visible blink) */
-static uint8_t s_blinkTogglesLeft = 0;
+/** Remaining yellow LED toggle steps (2 toggles = 1 blink) */
+static uint8_t s_yellowTogglesLeft = 0;
+static bool    s_prevPressed       = false;
+static uint32_t s_pressStartMs     = 0;
 
 // ============================================================================
 // Sys-Tick flag  (set by Timer1 ISR, consumed by main loop)
@@ -207,8 +211,8 @@ static void os_seq_scheduler_setup(void)
     os_seq_scheduler_task_init(&tasks[TASK_BUTTON_ID], Task1_ButtonMonitor,
                                REC_BUTTON, OFFS_BUTTON);
 
-    os_seq_scheduler_task_init(&tasks[TASK_STATS_ID],  Task2_StatsAndBlink,
-                               REC_BLINK,  OFFS_BLINK);
+    os_seq_scheduler_task_init(&tasks[TASK_STATS_ID],  Task2_StatsAndLeds,
+                               REC_STATS,  OFFS_STATS);
 
     os_seq_scheduler_task_init(&tasks[TASK_REPORT_ID], Task3_PeriodicReport,
                                REC_REPORT, OFFS_REPORT);
@@ -271,44 +275,63 @@ static void Timer1_Init(void)
  */
 static void Task1_ButtonMonitor(void)
 {
-    // Advance debounce state machine (non-blocking – just one sample)
     button.Update();
 
-    // Check for completed press/release cycle
     if (button.WasJustReleased())
     {
         uint32_t dur     = button.GetLastPressDuration();
-        bool     isShort = (dur < 500UL);
+        bool     isShort = (dur < SHORT_PRESS_THRESHOLD_MS);
 
-        // --- Publish press data (provider writes shared variables) ---
         g_pressDuration = dur;
         g_pressIsShort  = isShort;
-        g_pressEvent    = true;  // signal consumer task
+        g_pressEvent    = true;
 
-        // --- Notify via printf ---
-        printf("[T1] Press detected: %lu ms (%s)\n", dur, isShort ? "SHORT" : "LONG");
+        printf("[T1] Press: %lu ms (%s)\n", dur, isShort ? "SHORT" : "LONG");
     }
 }
 
 /**
- * @brief Task 2 – Statistics Counter & LED Blink
- *        Period: 50 ms  |  Offset: 10 ms  |  Priority: MEDIUM (consumer)
+ * @brief Task 2 – Statistics & LED Signalling
+ *        Period: 50 ms | Offset: 10 ms | Priority: MEDIUM
  *
- *        Consumes press events published by Task 1:
- *          • Updates global counters and total duration.
- *          • Arms the blink state machine on the single LED:
- *              – Short press →  5 blinks (10 toggles × 50 ms = 500 ms)
- *              – Long  press → 10 blinks (20 toggles × 50 ms = 1 000 ms)
- *
- *        Each call advances the blink state machine by one toggle (non-blocking).
- *        LED is forced off when the blink sequence completes.
+ *        On short press: GREEN on, RED off, yellow blinks 5 times.
+ *        On long  press: RED   on, GREEN off, yellow blinks 10 times.
+ *        Yellow is ON while button is held (steady), blinks after release.
  */
-static void Task2_StatsAndBlink(void)
+static void Task2_StatsAndLeds(void)
 {
+    bool pressedNow = button.IsPressed();
+
+    // ---- Red/Green LEDs: active only during an ongoing press ----
+    if (pressedNow && !s_prevPressed)
+    {
+        s_pressStartMs = millis();
+    }
+
+    if (pressedNow)
+    {
+        uint32_t heldMs = millis() - s_pressStartMs;
+        if (heldMs < SHORT_PRESS_THRESHOLD_MS)
+        {
+            ledGreen.On();
+            ledRed.Off();
+        }
+        else
+        {
+            ledRed.On();
+            ledGreen.Off();
+        }
+    }
+    else
+    {
+        ledGreen.Off();
+        ledRed.Off();
+    }
+
     // ---- Consume press event (read-then-clear) ----
     if (g_pressEvent)
     {
-        g_pressEvent = false; // consume the flag
+        g_pressEvent = false;
 
         g_totalPresses++;
         g_totalDuration += g_pressDuration;
@@ -316,25 +339,34 @@ static void Task2_StatsAndBlink(void)
         if (g_pressIsShort)
         {
             g_shortPresses++;
-            s_blinkTogglesLeft = 10; //  5 blinks × 2 toggles
+            s_yellowTogglesLeft = 10; // 5 blinks x 2 toggles
         }
         else
         {
             g_longPresses++;
-            s_blinkTogglesLeft = 20; // 10 blinks × 2 toggles
+            s_yellowTogglesLeft = 20; // 10 blinks x 2 toggles
         }
+
+        // Start blink sequence from a known state for consistent pulse count.
+        ledYellow.Off();
     }
 
-    // ---- Single LED blink state machine (non-blocking one step) ----
-    if (s_blinkTogglesLeft > 0)
+    // ---- Yellow LED: blink after release, or steady ON while held ----
+    if (s_yellowTogglesLeft > 0)
     {
-        led.Toggle();            // one toggle step every 50 ms
-        s_blinkTogglesLeft--;
+        ledYellow.Toggle();
+        s_yellowTogglesLeft--;
+    }
+    else if (pressedNow)
+    {
+        ledYellow.On();
     }
     else
     {
-        led.Off();               // keep LED off when idle
+        ledYellow.Off();
     }
+
+    s_prevPressed = pressedNow;
 }
 
 /**
@@ -380,47 +412,16 @@ static void Task3_PeriodicReport(void)
  */
 void lab2_setup(void)
 {
-    // --- Initialise ECAL hardware drivers ---
-    led.Init();
+    ledGreen.Init();
+    ledRed.Init();
+    ledYellow.Init();
     button.Init();
 
-    // --- Debug: show LED ON at startup ---
-    led.On();
-    delay(1000);
-
-    // --- Initialise Serial and redirect printf/scanf ---
     SerialStdioInit(9600);
-    printf("[Lab2] Sequential bare-metal scheduler starting...\n");
-    printf("[Lab2] Press button to begin. Report every 10 s.\n");
+    printf("[Lab2] Scheduler starting. BTN=D3 GREEN=D10 RED=D11 YELLOW=D12\n");
+    printf("[Lab2] Short(<500ms)->GREEN+5blinks | Long(>=500ms)->RED+10blinks\n");
 
-    // --- Debug: startup button self-check ---
-    printf("[DBG] Button self-check: press and hold D3 button now...\n");
-    uint32_t checkStart = millis();
-    bool buttonDetected = false;
-    while ((millis() - checkStart) < DEBUG_BTN_CHECK_TIMEOUT_MS)
-    {
-        button.Update();
-        if (button.IsPressed())
-        {
-            buttonDetected = true;
-            break;
-        }
-        delay(20);
-    }
-
-    if (buttonDetected)
-    {
-        printf("[DBG] Button check PASS (D3 press detected).\n");
-    }
-    else
-    {
-        printf("[DBG] Button check FAIL (no press). Check D3 <-> GND wiring.\n");
-    }
-
-    // --- Set up sequential task scheduler ---
     os_seq_scheduler_setup();
-
-    // --- Start Timer 1 for 1 ms sys-tick ---
     Timer1_Init();
 }
 

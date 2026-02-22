@@ -1,37 +1,29 @@
 {
   "version": 1,
-  "author": "Alexandra",
+  "author": "Lab 3 - Button Duration Monitoring",
   "editor": "wokwi",
   "parts": [
     { "type": "wokwi-arduino-uno", "id": "uno", "top": 0, "left": 0, "attrs": {} },
-    { "type": "wokwi-breadboard", "id": "bb1", "top": 300, "left": -55, "attrs": {} },
-    { "type": "wokwi-led", "id": "led1", "top": 310, "left": 176, "attrs": { "color": "green" } },
-    {
-      "type": "wokwi-resistor",
-      "id": "r1",
-      "top": 384,
-      "left": 162,
-      "rotate": 90,
-      "attrs": { "value": "220" }
-    },
-    {
-      "type": "wokwi-pushbutton",
-      "id": "btn1",
-      "top": 310,
-      "left": 80,
-      "attrs": { "color": "green" }
-    }
+    { "type": "wokwi-pushbutton", "id": "btn1", "top": 250, "left": 100, "attrs": { "color": "green" } },
+    { "type": "wokwi-led", "id": "led_green", "top": 250, "left": 200, "attrs": { "color": "green" } },
+    { "type": "wokwi-led", "id": "led_red", "top": 250, "left": 260, "attrs": { "color": "red" } },
+    { "type": "wokwi-led", "id": "led_yellow", "top": 250, "left": 320, "attrs": { "color": "yellow" } },
+    { "type": "wokwi-resistor", "id": "r_green", "top": 300, "left": 200, "rotate": 90, "attrs": { "value": "220" } },
+    { "type": "wokwi-resistor", "id": "r_red", "top": 300, "left": 260, "rotate": 90, "attrs": { "value": "220" } },
+    { "type": "wokwi-resistor", "id": "r_yellow", "top": 300, "left": 320, "rotate": 90, "attrs": { "value": "220" } }
   ],
   "connections": [
-    [ "bb1:25t.e", "uno:10", "green", [ "v-140", "h-10" ] ],
-    [ "btn1:1.l", "uno:A4", "cyan", [ "v0" ] ],
-    [ "btn1:2.l", "uno:GND.1", "black", [ "v0" ] ],
-    [ "led1:A", "bb1:25t.a", "", [ "$bb" ] ],
-    [ "led1:C", "bb1:24t.a", "", [ "$bb" ] ],
-    [ "r1:1", "bb1:24t.b", "", [ "$bb" ] ],
-    [ "r1:2", "bb1:24b.f", "", [ "$bb" ] ],
-    [ "bb1:24b.g", "bb1:bp.19", "green", [ "v0" ] ],
-    [ "bb1:bp.16", "uno:GND.1", "green", [ "v0" ] ]
+    [ "btn1:1.r", "uno:3", "green", [ "h0" ] ],
+    [ "btn1:2.r", "uno:GND.1", "black", [ "h0" ] ],
+    [ "led_green:A", "uno:10", "green", [ "h0" ] ],
+    [ "led_green:C", "r_green:1", "black", [ "h0" ] ],
+    [ "r_green:2", "uno:GND.1", "black", [ "h0" ] ],
+    [ "led_red:A", "uno:11", "red", [ "h0" ] ],
+    [ "led_red:C", "r_red:1", "black", [ "h0" ] ],
+    [ "r_red:2", "uno:GND.1", "black", [ "h0" ] ],
+    [ "led_yellow:A", "uno:12", "yellow", [ "h0" ] ],
+    [ "led_yellow:C", "r_yellow:1", "black", [ "h0" ] ],
+    [ "r_yellow:2", "uno:GND.1", "black", [ "h0" ] ]
   ],
   "dependencies": {}
 }
