@@ -1,29 +1,103 @@
 /**
  * @file main.cpp
  * @brief APP Layer - Laboratory Experiment Dispatcher
- * 
- * This is the entry point for the ES_Labs project. It acts as a dispatcher
- * that selects which laboratory exercise (Lab1, Lab1_2, Lab2, etc.) to execute.
- * 
- * To switch between labs, simply change the SELECTED_LAB macro value:
- * - 1    : Lab 1.1 (Serial LED Control)
- * - 12   : Lab 1.2 (Lock FSM with Keypad/LCD)
- * - 2, 3, etc. : Additional labs when available
- * 
+ *
+ * Selects the active lab via SELECTED_LAB macro.
+ * Also provides extern "C" hardware wrappers so the Lab2_2 .c files
+ * can call Arduino (C++) APIs like Serial, pinMode, etc.
+ *
  * Architecture: APP -> SRV(Lab) -> ECAL(Drivers) -> MCAL(Arduino) -> HW
  */
 
 #include <Arduino.h>
 #include <avr/wdt.h>
+#include <util/delay.h>
+#include <stdio.h>
 
 // ============================================================================
-// CONFIGURATION: Change this to switch between labs
+// CONFIGURATION – change this value to select a lab
 // ============================================================================
-// Simply change the value below to select which lab to run:
-//   1  = Lab 1.1 (Serial LED Control with printf/scanf)
-//   12 = Lab 1.2 (Smart Lock FSM with Keypad/LCD + serial debug)
-//   2  = Lab 2   (Button Duration Monitor – sequential bare-metal scheduler)
-#define SELECTED_LAB 2          // Options: 1 (Lab 1.1), 12 (Lab 1.2), 2 (Lab 2)
+//   1  = Lab 1.1   12 = Lab 1.2   2 = Lab 2   22 = Lab 2.2 (FreeRTOS, C)
+#define SELECTED_LAB 22
+// ============================================================================
+
+// ============================================================================
+// C-callable hardware wrappers (used by Lab2_2/*.c via avr_helpers.h)
+// ============================================================================
+extern "C" {
+
+void hw_pin_mode(uint8_t pin, uint8_t mode)
+{
+    pinMode(pin, mode);
+}
+
+void hw_digital_write(uint8_t pin, uint8_t val)
+{
+    digitalWrite(pin, val);
+}
+
+uint8_t hw_digital_read(uint8_t pin)
+{
+    return (uint8_t)digitalRead(pin);
+}
+
+unsigned long hw_millis(void)
+{
+    return millis();
+}
+
+void hw_delay_ms(unsigned long ms)
+{
+    /* Busy-wait – safe before AND after scheduler starts.
+       Uses avr-libc _delay_ms(1) which is a calibrated busy loop. */
+    while (ms > 0) { _delay_ms(1); ms--; }
+}
+
+void dbg_print(const char *s)
+{
+    Serial.print(s);
+}
+
+void dbg_print_num(long n)
+{
+    Serial.print(n);
+}
+
+void dbg_println(const char *s)
+{
+    Serial.println(s);
+}
+
+void dbg_println_num(long n)
+{
+    Serial.println(n);
+}
+
+void dbg_println_empty(void)
+{
+    Serial.println();
+}
+
+void dbg_flush(void)
+{
+    Serial.flush();
+}
+
+} /* extern "C" */
+
+// ============================================================================
+// UART stdio redirection – makes printf() -> Serial TX
+// ============================================================================
+static FILE uart_stream;
+
+static int uart_putchar(char c, FILE *stream)
+{
+    Serial.write(c);
+    return 0;
+}
+
+// ============================================================================
+// Lab includes
 // ============================================================================
 
 #if SELECTED_LAB == 1
@@ -31,55 +105,58 @@
 #endif
 
 #if SELECTED_LAB == 12
-    // For Lab 1.2, we'll declare the functions that are in Lab1_2_main.cpp
     void lab1_2_setup();
     void lab1_2_loop();
 #endif
 
 #if SELECTED_LAB == 2
-    // For Lab 2, declare the functions that are in Lab2/Lab2_main.cpp
     void lab2_setup();
     void lab2_loop();
 #endif
 
-/**
- * @brief Arduino setup() - Called once at startup
- * 
- * Initializes the selected lab based on the SELECTED_LAB macro.
- */
+#if SELECTED_LAB == 22
+    #include "Lab2_2/Lab2_2_main.h"
+#endif
+
+// ============================================================================
+// Arduino entry points
+// ============================================================================
+
 void setup()
 {
-    wdt_disable();  // Prevent bootloader WDT reset loop flooding serial
+    wdt_disable();
+
+#if SELECTED_LAB == 22
+    Serial.begin(9600);
+    while (!Serial) { ; }
+
+    /* Redirect stdout to UART so printf() works */
+    fdev_setup_stream(&uart_stream, uart_putchar, NULL, _FDEV_SETUP_WRITE);
+    stdout = &uart_stream;
+
+    printf("[main] === Lab 2.2 starting ===\n");
+#endif
 
 #if SELECTED_LAB == 1
     Lab1_Setup();
-#endif
-
-#if SELECTED_LAB == 12
+#elif SELECTED_LAB == 12
     lab1_2_setup();
-#endif
-
-#if SELECTED_LAB == 2
+#elif SELECTED_LAB == 2
     lab2_setup();
+#elif SELECTED_LAB == 22
+    lab2_2_setup();
 #endif
 }
 
-/**
- * @brief Arduino loop() - Called repeatedly after setup()
- * 
- * Runs the main loop for the selected lab.
- */
 void loop()
 {
 #if SELECTED_LAB == 1
     Lab1_Loop();
-#endif
-
-#if SELECTED_LAB == 12
+#elif SELECTED_LAB == 12
     lab1_2_loop();
-#endif
-
-#if SELECTED_LAB == 2
+#elif SELECTED_LAB == 2
     lab2_loop();
+#elif SELECTED_LAB == 22
+    lab2_2_loop();
 #endif
 }

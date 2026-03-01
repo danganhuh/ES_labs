@@ -49,17 +49,6 @@
  *   Task3 exec ≈ 2 ms    → load per tick = 2/10000  ≈ 0.02 %
  *   Total ≈ < 1 % → well below the 70-80 % safe threshold.
  *
- * =============================================================================
- * HARDWARE – Pin Assignment (Lab 2)
- * =============================================================================
- *  Component      | Arduino Pin | Notes
- * ----------------|-------------|-------------------------------------------
- *  Push-button    |  3          | INPUT_PULLUP, active-low (button to GND)
- *  Green LED      |  10         | Short-press indicator
- *  Red   LED      |  11         | Long-press  indicator
- *  Yellow LED     |  12         | Press-active (steady) + blink count signal
- *  Serial STDIO   |  TX/RX (0,1)| 9600 baud – printf via SerialStdioInit
- *
  * Architecture: APP (main.cpp) → SRV (Lab2) → ECAL (Drivers) → MCAL (Arduino)
  */
 
@@ -72,18 +61,10 @@
 #include "button/ButtonDriver.h"
 #include "drivers/SerialStdioDriver.h"
 
-// ============================================================================
-// Pin Configuration
-// ============================================================================
-
-static const uint8_t BTN_PIN        = 3;   ///< Push-button (INPUT_PULLUP, active low)
-static const uint8_t LED_GREEN_PIN  = 10;  ///< Green LED  – short press indicator
-static const uint8_t LED_RED_PIN    = 11;  ///< Red   LED  – long  press indicator
-static const uint8_t LED_YELLOW_PIN = 12;  ///< Yellow LED – press-active + blink
-
-// ============================================================================
-// Scheduler Configuration
-// ============================================================================
+static const uint8_t BTN_PIN        = 2;   ///< Push-button (INPUT_PULLUP, active low)
+static const uint8_t LED_GREEN_PIN  = 13;  ///< Green LED  – short press indicator
+static const uint8_t LED_RED_PIN    = 12;  ///< Red   LED  – long  press indicator
+static const uint8_t LED_YELLOW_PIN = 11;  ///< Yellow LED – press-active + blink
 
 #define REC_BUTTON  20       ///< Task 1: 20 ms
 #define REC_STATS   50       ///< Task 2: 50 ms – one blink-toggle per call
@@ -95,13 +76,6 @@ static const uint8_t LED_YELLOW_PIN = 12;  ///< Yellow LED – press-active + bl
 
 #define SHORT_PRESS_THRESHOLD_MS 500UL
 
-// ============================================================================
-// Task Context Structure  (Section 3.1 – optimised variant)
-// ============================================================================
-
-/**
- * @brief Descriptor for a single sequential task entry.
- */
 typedef struct
 {
     void (*task_func)(void); ///< Pointer to the task's main function
@@ -126,18 +100,10 @@ static void Task3_PeriodicReport(void);
 /** Global task table (initialised in os_seq_scheduler_setup) */
 static Task_t tasks[MAX_OF_TASKS];
 
-// ============================================================================
-// Hardware Driver Instances  (ECAL layer – reused from project drivers)
-// ============================================================================
-
 static LedDriver    ledGreen (LED_GREEN_PIN);
 static LedDriver    ledRed   (LED_RED_PIN);
 static LedDriver    ledYellow(LED_YELLOW_PIN);
 static ButtonDriver button   (BTN_PIN, true, true); ///< active-low, INPUT_PULLUP
-
-// ============================================================================
-// Shared Variables  (inter-task communication via global setter/getter pattern)
-// ============================================================================
 
 /** Written by Task1 (provider), read & cleared by Task2 (consumer) */
 static volatile bool     g_pressEvent    = false; ///< New press available flag
@@ -150,18 +116,10 @@ static volatile uint16_t g_shortPresses  = 0;  ///< Presses shorter than 500 ms
 static volatile uint16_t g_longPresses   = 0;  ///< Presses 500 ms or longer
 static volatile uint32_t g_totalDuration = 0;  ///< Accumulated press duration (ms)
 
-// ============================================================================
-// Task 2 private state
-// ============================================================================
-
 /** Remaining yellow LED toggle steps (2 toggles = 1 blink) */
 static uint8_t s_yellowTogglesLeft = 0;
 static bool    s_prevPressed       = false;
 static uint32_t s_pressStartMs     = 0;
-
-// ============================================================================
-// Sys-Tick flag  (set by Timer1 ISR, consumed by main loop)
-// ============================================================================
 
 static volatile bool g_sysTick = false; ///< Set every 1 ms by Timer1 ISR
 
@@ -169,15 +127,6 @@ static volatile bool g_sysTick = false; ///< Set every 1 ms by Timer1 ISR
 // Timer 1 ISR  – 1 ms CTC interrupt
 // ============================================================================
 
-/**
- * @brief Timer 1 compare-A interrupt service routine.
- *        Fires every 1 ms. Sets g_sysTick so that the scheduler runs in
- *        the main-thread context (safe for printf calls in tasks).
- *
- * Timer 1 CTC configuration (set up in Timer1_Init()):
- *   Clock = 16 MHz, prescaler = 64 → tick period = 4 µs
- *   OCR1A = 249  →  ISR period = 250 × 4 µs = 1 ms
- */
 ISR(TIMER1_COMPA_vect)
 {
     g_sysTick = true;
@@ -187,9 +136,6 @@ ISR(TIMER1_COMPA_vect)
 // Scheduler – sequential bare-metal OS implementation
 // ============================================================================
 
-/**
- * @brief Initialise one task descriptor and load its counter with the offset.
- */
 static void os_seq_scheduler_task_init(Task_t* task,
                                        void (*task_func)(void),
                                        int rec,
@@ -201,11 +147,6 @@ static void os_seq_scheduler_task_init(Task_t* task,
     task->rec_cnt   = offset; // first activation delayed by offset ms
 }
 
-/**
- * @brief Set up the task table with recurence, offset and function pointers.
- *        Task order defines priority: Task1 (button) > Task2 (stats) > Task3 (report).
- *        Provider (Task1) is listed before its consumer (Task2).
- */
 static void os_seq_scheduler_setup(void)
 {
     os_seq_scheduler_task_init(&tasks[TASK_BUTTON_ID], Task1_ButtonMonitor,
@@ -218,14 +159,6 @@ static void os_seq_scheduler_setup(void)
                                REC_REPORT, OFFS_REPORT);
 }
 
-/**
- * @brief Main scheduler body – called once per 1 ms sys-tick from main loop.
- *
- *        Each task's down-counter is decremented; when it reaches zero the
- *        task function is executed and the counter is reloaded with the
- *        configured period (recurence).  Offset is applied only on first
- *        activation via os_seq_scheduler_task_init().
- */
 static void os_seq_scheduler_loop(void)
 {
     for (int i = 0; i < MAX_OF_TASKS; i++)
@@ -242,12 +175,6 @@ static void os_seq_scheduler_loop(void)
 // Timer 1 hardware initialisation
 // ============================================================================
 
-/**
- * @brief Configure Timer 1 for CTC mode with 1 ms period at 16 MHz.
- *
- *   Prescaler = 64  →  timer tick = 4 µs
- *   OCR1A     = 249 →  ISR fires every 250 ticks × 4 µs = 1 ms
- */
 static void Timer1_Init(void)
 {
     cli();                                              // disable global interrupts
@@ -257,10 +184,6 @@ static void Timer1_Init(void)
     TIMSK1 = (1 << OCIE1A);                             // enable compare-A interrupt
     sei();                                              // re-enable global interrupts
 }
-
-// ============================================================================
-// Task Implementations
-// ============================================================================
 
 /**
  * @brief Task 1 – Button Detection & Duration Measurement
@@ -402,10 +325,6 @@ static void Task3_PeriodicReport(void)
     g_totalDuration = 0;
 }
 
-// ============================================================================
-// Public entry points (called from main.cpp)
-// ============================================================================
-
 /**
  * @brief One-time hardware and scheduler initialisation for Lab 2.
  *        Called from Arduino setup().
@@ -425,14 +344,6 @@ void lab2_setup(void)
     Timer1_Init();
 }
 
-/**
- * @brief Main application loop for Lab 2.
- *        Called from Arduino loop().
- *
- *        Checks for the 1 ms sys-tick flag set by Timer1 ISR and delegates
- *        execution to the sequential scheduler.  Tasks therefore run in
- *        main-thread context — safe for Serial I/O.
- */
 void lab2_loop(void)
 {
     if (g_sysTick)

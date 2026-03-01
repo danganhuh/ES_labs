@@ -63,7 +63,9 @@ static int UartGetChar(FILE *stream)
 void SerialStdioInit(unsigned long baudRate)
 {
     Serial.begin(baudRate);   // MCAL: Initialize serial
-    while (!Serial) {}        // Wait for serial connection
+
+    unsigned long startMs = millis();
+    while (!Serial && (millis() - startMs < 1500UL)) {}
 
     // Redirect printf (stdout) and scanf (stdin) to UART
     fdev_setup_stream(&UartStdOut, UartPutChar, UartGetChar, _FDEV_SETUP_RW);

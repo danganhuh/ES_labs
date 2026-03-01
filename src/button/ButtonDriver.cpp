@@ -19,16 +19,12 @@
 
 #include "ButtonDriver.h"
 
-// ---------------------------------------------------------------------------
-// Constructor
-// ---------------------------------------------------------------------------
-
 ButtonDriver::ButtonDriver(uint8_t pin,
                                                      bool activeLow,
                                                      bool useInternalPullup)
     : _pin(pin),
             _activeLow(activeLow),
-            _useInternalPullup(useInternalPullup),
+            _useInternalPullup(useInternalPullup), 
       _debouncedState(false),
       _sampleCount(0),
       _releaseFlag(false),
@@ -37,24 +33,10 @@ ButtonDriver::ButtonDriver(uint8_t pin,
 {
 }
 
-// ---------------------------------------------------------------------------
-// Public interface
-// ---------------------------------------------------------------------------
-
-/**
- * @brief Configure GPIO pin mode based on wiring style.
- *        Must be called once before the first Update().
- */
 void ButtonDriver::Init()
 {
     pinMode(_pin, _useInternalPullup ? INPUT_PULLUP : INPUT);
 
-    // Do NOT read the pin immediately here: the internal pull-up resistor
-    // needs a few microseconds to pull the line to its idle level.  Reading
-    // too early can latch _debouncedState to the wrong value (e.g. "pressed")
-    // and make the button appear permanently active at start-up.
-    // Instead, always start as "not pressed" and let the debounce state
-    // machine settle to the real state within 5 x 20 ms = 100 ms.
     _debouncedState = false;
     _sampleCount    = 0;
     _releaseFlag    = false;
@@ -62,14 +44,7 @@ void ButtonDriver::Init()
     _lastDurationMs = 0;
 }
 
-/**
- * @brief Non-blocking debounce update.  Call every 20 ms from the scheduler.
- *
- * The function reads the raw pin state and compares it against the currently
- * accepted (_debouncedState) state:
- *   - Same as accepted → reset transient sample counter, nothing changes.
- *   - Different        → accumulate sample; transition when stable enough.
- */
+
 void ButtonDriver::Update()
 {
     int rawValue = digitalRead(_pin);               // MCAL: digitalRead
@@ -106,19 +81,12 @@ void ButtonDriver::Update()
     }
 }
 
-/**
- * @brief Return current debounced state.
- * @return true = pressed; false = released.
- */
 bool ButtonDriver::IsPressed() const
 {
     return _debouncedState;
 }
 
-/**
- * @brief Read-and-clear release flag.
- * @return true once after every completed press, then false until next release.
- */
+
 bool ButtonDriver::WasJustReleased()
 {
     if (_releaseFlag)
@@ -129,9 +97,6 @@ bool ButtonDriver::WasJustReleased()
     return false;
 }
 
-/**
- * @brief Return duration of the most recently completed press in milliseconds.
- */
 uint32_t ButtonDriver::GetLastPressDuration() const
 {
     return _lastDurationMs;
