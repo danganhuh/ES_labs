@@ -114,25 +114,209 @@ These systems prioritize deterministic response, efficient blocking (no polling 
 The modular implementation (Figure 1) follows separation between interface and implementation. Header files (.h) define task function prototypes and shared data types, while source files (.c) implement FreeRTOS task functions for button debouncing, statistics accumulation, LED feedback, and periodic reporting. The C++ bridge (main.cpp) provides hardware wrappers and UART stdio redirection.
 
 Figure 1: Structure of the laboratory work
-The architecture separates application tasks from RTOS services, C-callable hardware wrappers, and Arduino/AVR hardware abstraction (Figure 2). SharedState centralizes all inter-task data with mutex and semaphore handles. FreeRTOS manages preemptive scheduling, task switching, and blocking delays. The fdev_setup_stream mechanism redirects printf to UART TX and scanf to UART RX.
+The architecture separates application tasks from RTOS services, C-callable hardware wrappers, and Arduino/AVR hardware abstraction (Figure 2). SharedState centralizes inter-task data with a queue handle for press events and a mutex handle for statistics protection. FreeRTOS manages preemptive scheduling, task switching, and blocking delays. The fdev_setup_stream mechanism redirects printf to UART TX.
 
 Figure 2: Architecture schema
-From the user perspective (Figure 3), interaction begins at startup by entering a threshold value via scanf in the serial monitor. During operation, pressing and releasing the button produces a printf event log, and LEDs provide visual feedback: green for short press, red for long press, yellow blinks proportional to press type.
+```mermaid
+flowchart LR
+	U[User Button D4] --> M[TaskMeasurement\nPriority 3]
+	M -->|xQueueSend PressEventData| Q[(pressEventQueue)]
+	M -->|xSemaphoreTake/Give| MX[(statsMutex)]
+	Q -->|xQueueReceive| S[TaskStatistics\nPriority 2]
+	S --> LG[Green LED D13]
+	S --> LR[Red LED D12]
+	S --> LY[Yellow LED D11]
+	R[TaskReporting\nPriority 1] -->|xSemaphoreTake/Give| MX
+	R --> UART[UART Serial Monitor\nprintf]
+```
+
+From the user perspective (Figure 3), interaction begins with button presses on D4. During operation, each press/release event produces a formatted printf event log, while LEDs provide visual feedback: green for short press, red for long press, and yellow blinks proportional to press type.
 
 Figure 3: User interaction
-The flowchart (Figure 4) starts with hardware initialization and scanf threshold input. After FreeRTOS scheduler starts, TaskMeasurement polls and debounces the button, publishes event data via mutex, and signals via semaphore. TaskStatistics blocks on semaphore, reads event data, updates statistics, and drives LED feedback with vTaskDelay. TaskReporting periodically prints aggregated metrics via printf and resets counters.
+```mermaid
+sequenceDiagram
+	actor User
+	participant BTN as Button D4
+	participant TM as TaskMeasurement
+	participant TS as TaskStatistics
+	participant TR as TaskReporting
+	participant UART as Serial Monitor
+	participant LED as LEDs D13/D12/D11
+
+	User->>BTN: Press/Release
+	BTN->>TM: raw digital state
+	TM->>UART: printf(Button Event block)
+	TM->>TS: Queue event (duration, class)
+	TS->>LED: Green/Red + Yellow blink pattern
+	TR->>UART: printf(Periodic stats table)
+```
+
+The flowchart (Figure 4) starts with hardware initialization. After FreeRTOS scheduler starts, TaskMeasurement polls and debounces the button, updates stats under mutex, and queues each event. TaskStatistics blocks on queue receive, consumes events, and drives LED feedback with vTaskDelay. TaskReporting periodically snapshots and resets statistics under mutex and prints aggregated metrics via printf.
 
 Figure 4: Activity diagram
-The state representation (Figure 5) for runtime behavior includes implicit states such as IDLE (tasks blocked on semaphore/delay), DEBOUNCING (consecutive matching samples), EVENT_SIGNALED (semaphore given), BLINK_ACTIVE (yellow LED toggling via vTaskDelay), and REPORT_WINDOW (statistics snapshot and reset). Transitions are triggered by debounced button transitions, semaphore signals, and vTaskDelayUntil expiration.
+```mermaid
+flowchart TD
+	A[Init Hardware + RTOS Objects] --> B[Start Scheduler]
+	B --> C[TaskMeasurement Loop]
+	C --> D{Debounced release?}
+	D -- No --> C
+	D -- Yes --> E[Compute duration + class]
+	E --> F[Lock statsMutex and update counters]
+	F --> G[Queue event to pressEventQueue]
+	G --> C
+
+	B --> H[TaskStatistics waits xQueueReceive]
+	H --> I{Event received?}
+	I -- Yes --> J[Drive Green/Red and Yellow blink]
+	J --> H
+
+	B --> K[TaskReporting vTaskDelayUntil 10s]
+	K --> L[Lock statsMutex, snapshot+reset]
+	L --> M[printf stats table]
+	M --> K
+```
+
+The state representation (Figure 5) for runtime behavior includes implicit states such as IDLE (tasks blocked on queue/delay), DEBOUNCING (consecutive matching samples), EVENT_QUEUED, BLINK_ACTIVE (yellow LED toggling via vTaskDelay), and REPORT_WINDOW (statistics snapshot and reset). Transitions are triggered by debounced button transitions, queue send/receive, and vTaskDelayUntil expiration.
 
 Figure 5: State diagram for the system
-The sequence diagram (Figure 6) captures interaction among TaskMeasurement, SharedState (mutex-protected), binary semaphore, TaskStatistics, LED GPIO wrappers, and TaskReporting. TaskMeasurement takes pressDataMutex, writes press data, gives pressEventSem. TaskStatistics takes pressEventSem, takes pressDataMutex to read, takes statsMutex to update counters, then drives LEDs. TaskReporting takes statsMutex, reads and resets stats, prints via printf.
+```mermaid
+stateDiagram-v2
+	[*] --> Idle
+	Idle --> Debouncing: raw change detected
+	Debouncing --> PressTracking: stable pressed
+	PressTracking --> EventQueued: stable released
+	EventQueued --> BlinkActive: queue consumed by TaskStatistics
+	BlinkActive --> Idle: blink sequence done
+	Idle --> ReportWindow: periodic wake (10 s)
+	ReportWindow --> Idle: snapshot+reset complete
+```
+
+The sequence diagram (Figure 6) captures interaction among TaskMeasurement, SharedState (queue + mutex), TaskStatistics, LED GPIO wrappers, and TaskReporting. TaskMeasurement updates counters under statsMutex and sends press events to pressEventQueue. TaskStatistics receives queued events and drives LEDs. TaskReporting locks statsMutex, reads and resets counters, then prints via printf.
 
 Figure 6: Sequence diagram of user action
-The electrical implementation (Figure 7) uses an ATmega2560-based board with a push-button on D4 (to GND, internal pull-up enabled), green LED on D13, red LED on D12, yellow LED on D11 (each through appropriate resistor to GND), and serial USB connection for printf/scanf UART communication.
+```mermaid
+sequenceDiagram
+	participant TM as TaskMeasurement
+	participant SS as SharedState
+	participant Q as pressEventQueue
+	participant TS as TaskStatistics
+	participant TR as TaskReporting
+	participant UART as Serial
+
+	TM->>SS: xSemaphoreTake(statsMutex)
+	TM->>SS: update counters
+	TM->>SS: xSemaphoreGive(statsMutex)
+	TM->>Q: xQueueSend(PressEventData)
+	Q->>TS: xQueueReceive(..., portMAX_DELAY)
+	TS->>TS: LED feedback sequence
+	TR->>SS: xSemaphoreTake(statsMutex)
+	TR->>SS: snapshot + reset stats
+	TR->>SS: xSemaphoreGive(statsMutex)
+	TR->>UART: printf(table)
+```
+
+The electrical implementation (Figure 7) uses an ATmega2560-based board with a push-button on D4 (to GND, internal pull-up enabled), green LED on D13, red LED on D12, yellow LED on D11 (each through appropriate resistor to GND), and serial USB connection for printf UART communication.
 
 Figure 7: Modelated electronic schema
-Behavioral decomposition (Figure 8) includes three concurrent FreeRTOS tasks: TaskMeasurement (priority 3, polls every tick), TaskStatistics (priority 2, blocks on semaphore), and TaskReporting (priority 1, periodic via vTaskDelayUntil every 10 s). Preemptive scheduling ensures TaskMeasurement always runs promptly when ready, while TaskStatistics and TaskReporting execute when higher-priority tasks are blocked.
+Behavioral decomposition (Figure 8) includes three concurrent FreeRTOS tasks: TaskMeasurement (priority 3, polls every tick), TaskStatistics (priority 2, blocks on queue receive), and TaskReporting (priority 1, periodic via vTaskDelayUntil every 10 s). Preemptive scheduling ensures TaskMeasurement always runs promptly when ready, while TaskStatistics and TaskReporting execute when higher-priority tasks are blocked.
+
+```mermaid
+gantt
+	title FreeRTOS Priority-Ordered Scheduling Timeline (Task A/B/C + ISR + IDLE)
+	dateFormat  X
+	axisFormat %L ms
+
+	section Delay windows (blocked intervals)
+	Delay Task A                          :done, da1, 0, 58
+	Delay Task B                          :done, db1, 18, 62
+	Delay Task C                          :done, dc1, 26, 74
+
+	section Task A - Measurement (Priority 3)
+	Run burst                             :crit, a1, 0, 2
+	Run burst                             :crit, a2, 6, 2
+	Run burst                             :crit, a3, 12, 2
+	Run burst                             :crit, a4, 58, 2
+	Run burst                             :crit, a5, 62, 2
+	Run burst                             :crit, a6, 66, 2
+	Run burst                             :crit, a7, 70, 2
+	Run burst                             :crit, a8, 74, 2
+	Run burst                             :crit, a9, 80, 2
+	Run burst                             :crit, a10, 86, 2
+	Run burst                             :crit, a11, 92, 2
+	Run burst                             :crit, a12, 100, 2
+	Run burst                             :crit, a13, 110, 2
+
+	section Task B - Statistics (Priority 2)
+	Run burst                             :b1, 2, 2
+	Run burst                             :b2, 8, 2
+	Run burst                             :b3, 14, 2
+	Run burst                             :b4, 18, 2
+	Run burst                             :b5, 22, 2
+	Run burst                             :b6, 26, 2
+	Run burst                             :b7, 30, 2
+	Run burst                             :b8, 34, 2
+	Run burst                             :b9, 72, 2
+	Run burst                             :b10, 76, 2
+	Run burst                             :b11, 82, 2
+	Run burst                             :b12, 88, 2
+	Run burst                             :b13, 96, 2
+	Run burst                             :b14, 104, 2
+	Run burst                             :b15, 114, 2
+
+	section Task C - Reporting (Priority 1)
+	Run burst                             :c1, 4, 2
+	Run burst                             :c2, 10, 2
+	Run burst                             :c3, 16, 2
+	Run burst                             :c4, 24, 2
+	Run burst                             :c5, 28, 2
+	Run burst                             :c6, 32, 2
+	Run burst                             :c7, 36, 2
+	Run burst                             :c8, 40, 2
+	Run burst                             :c9, 44, 2
+	Run burst                             :c10, 48, 2
+	Run burst                             :c11, 52, 2
+	Run burst                             :c12, 92, 2
+	Run burst                             :c13, 100, 2
+	Run burst                             :c14, 108, 2
+	Run burst                             :c15, 116, 2
+
+	section T0 ISR (timer tick / dispatch)
+	Tick ISR                              :active, t01, 0, 1
+	Tick ISR                              :active, t02, 4, 1
+	Tick ISR                              :active, t03, 8, 1
+	Tick ISR                              :active, t04, 12, 1
+	Tick ISR                              :active, t05, 16, 1
+	Tick ISR                              :active, t06, 20, 1
+	Tick ISR                              :active, t07, 24, 1
+	Tick ISR                              :active, t08, 28, 1
+	Tick ISR                              :active, t09, 32, 1
+	Tick ISR                              :active, t10, 36, 1
+	Tick ISR                              :active, t11, 40, 1
+	Tick ISR                              :active, t12, 44, 1
+	Tick ISR                              :active, t13, 48, 1
+	Tick ISR                              :active, t14, 52, 1
+	Tick ISR                              :active, t15, 56, 1
+	Tick ISR                              :active, t16, 60, 1
+	Tick ISR                              :active, t17, 64, 1
+	Tick ISR                              :active, t18, 68, 1
+	Tick ISR                              :active, t19, 72, 1
+	Tick ISR                              :active, t20, 76, 1
+	Tick ISR                              :active, t21, 80, 1
+	Tick ISR                              :active, t22, 84, 1
+	Tick ISR                              :active, t23, 88, 1
+	Tick ISR                              :active, t24, 92, 1
+	Tick ISR                              :active, t25, 96, 1
+	Tick ISR                              :active, t26, 100, 1
+	Tick ISR                              :active, t27, 104, 1
+	Tick ISR                              :active, t28, 108, 1
+	Tick ISR                              :active, t29, 112, 1
+	Tick ISR                              :active, t30, 116, 1
+
+	section IDLE (Priority 0)
+	Idle window                            :i1, 54, 4
+	Idle window                            :i2, 58, 10
+	Idle window                            :i3, 68, 6
+```
 
 Figure 8: Behavior diagrams for each peripheral
 

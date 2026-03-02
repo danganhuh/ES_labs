@@ -54,9 +54,9 @@ void TaskStatistics(void *pv)
                 for (i = 0; i < blinks; i++)
                 {
                     hw_digital_write(LED_YELLOW_PIN, PIN_HIGH);
-                    vTaskDelay(pdMS_TO_TICKS(250));
+                    vTaskDelay(pdMS_TO_TICKS(100));
                     hw_digital_write(LED_YELLOW_PIN, PIN_LOW);
-                    vTaskDelay(pdMS_TO_TICKS(250));
+                    vTaskDelay(pdMS_TO_TICKS(100));
                 }
             }
 
