@@ -40,6 +40,7 @@ typedef struct {
 typedef struct {
     QueueHandle_t     pressEventQueue;
     SemaphoreHandle_t statsMutex;
+    SemaphoreHandle_t ioMutex;
     PressStats        stats;
 } SharedState;
 

@@ -16,7 +16,11 @@
 void TaskStatistics(void *pv)
 {
     (void)pv;
-    printf("[Stats] === Task started ===\n");
+    if (xSemaphoreTake(g_shared.ioMutex, portMAX_DELAY) == pdTRUE)
+    {
+        printf("[Stats] === Task started ===\n");
+        xSemaphoreGive(g_shared.ioMutex);
+    }
 
     for (;;)
     {
@@ -64,6 +68,14 @@ void TaskStatistics(void *pv)
             hw_digital_write(LED_GREEN_PIN,  PIN_LOW);
             hw_digital_write(LED_RED_PIN,    PIN_LOW);
             hw_digital_write(LED_YELLOW_PIN, PIN_LOW);
+
+            if (xSemaphoreTake(g_shared.ioMutex, portMAX_DELAY) == pdTRUE)
+            {
+                printf("[Stats] Event processed: %s, queue pending=%u\r\n",
+                       isS ? "SHORT" : "LONG",
+                      (unsigned)uxQueueMessagesWaiting(g_shared.pressEventQueue));
+                xSemaphoreGive(g_shared.ioMutex);
+            }
         }
     }
 }

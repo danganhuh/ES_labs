@@ -15,7 +15,11 @@
 void TaskReporting(void *pv)
 {
     (void)pv;
-    printf("[Report] === Task started ===\r\n");
+    if (xSemaphoreTake(g_shared.ioMutex, portMAX_DELAY) == pdTRUE)
+    {
+        printf("[Report] === Task started ===\r\n");
+        xSemaphoreGive(g_shared.ioMutex);
+    }
 
     TickType_t lastWake = xTaskGetTickCount();
 
@@ -44,20 +48,24 @@ void TaskReporting(void *pv)
         {
             uint32_t avg = (tp > 0) ? (td / tp) : 0;
 
-            printf(
-                "+------------------------------------------+\r\n"
-                "|            Button Statistics             |\r\n"
-                "+------------------------------------------+\r\n"
-                "| Total presses         : %-12u |\r\n"
-                "| Short presses         : %-12u |\r\n"
-                "| Long presses          : %-12u |\r\n"
-                "| Average duration (ms) : %-12lu |\r\n"
-                "+------------------------------------------+\r\n\r\n",
-                tp,
-                sp,
-                lp,
-                (unsigned long)avg
-            );
+            if (xSemaphoreTake(g_shared.ioMutex, portMAX_DELAY) == pdTRUE)
+            {
+                printf(
+                    "+------------------------------------------+\r\n"
+                    "|            Button Statistics             |\r\n"
+                    "+------------------------------------------+\r\n"
+                    "| Total presses         : %-12u |\r\n"
+                    "| Short presses         : %-12u |\r\n"
+                    "| Long presses          : %-12u |\r\n"
+                    "| Average duration (ms) : %-12lu |\r\n"
+                    "+------------------------------------------+\r\n\r\n",
+                    tp,
+                    sp,
+                    lp,
+                    (unsigned long)avg
+                );
+                xSemaphoreGive(g_shared.ioMutex);
+            }
         }
 
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(10000));

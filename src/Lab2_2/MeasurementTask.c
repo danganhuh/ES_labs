@@ -80,16 +80,20 @@ void TaskMeasurement(void *pv)
                         }
                     }
 
-                    printf(
-                        "+---------------- Button Event ----------------+\r\n"
-                        "| Event ID : %-31lu |\r\n"
-                        "| Type     : %-31s |\r\n"
-                        "| Duration : %-27lu ms |\r\n"
-                        "+----------------------------------------------+\r\n\r\n",
-                        eventIndex,
-                        isS ? "SHORT" : "LONG",
-                        (unsigned long)dur
-                    );
+                    if (xSemaphoreTake(g_shared.ioMutex, portMAX_DELAY) == pdTRUE)
+                    {
+                        printf(
+                            "+---------------- Button Event ----------------+\r\n"
+                            "| Event ID : %-31lu |\r\n"
+                            "| Type     : %-31s |\r\n"
+                            "| Duration : %-27lu ms |\r\n"
+                            "+----------------------------------------------+\r\n\r\n",
+                            eventIndex,
+                            isS ? "SHORT" : "LONG",
+                            (unsigned long)dur
+                        );
+                        xSemaphoreGive(g_shared.ioMutex);
+                    }
                 }
             }
         }

@@ -58,13 +58,14 @@ void lab2_2_setup(void)
     g_shared.pressEventQueue = xQueueCreate(PRESS_EVENT_QUEUE_LEN,
                                             sizeof(PressEventData));
     g_shared.statsMutex     = xSemaphoreCreateMutex();
+    g_shared.ioMutex        = xSemaphoreCreateMutex();
 
-    if (!g_shared.pressEventQueue || !g_shared.statsMutex)
+    if (!g_shared.pressEventQueue || !g_shared.statsMutex || !g_shared.ioMutex)
     {
         printf("[Lab2_2] FATAL: RTOS primitive alloc failed!\n");
         for (;;) { /* halt */ }
     }
-    printf("[Lab2_2] Queue + mutex OK\n");
+    printf("[Lab2_2] Queue + mutexes OK\n");
 
     /* --- Create FreeRTOS tasks --- */
     BaseType_t ok;
