@@ -17,8 +17,8 @@
 // ============================================================================
 // CONFIGURATION – change this value to select a lab
 // ============================================================================
-//   1  = Lab 1.1   12 = Lab 1.2   2 = Lab 2   22 = Lab 2.2 (FreeRTOS, C)
-#define SELECTED_LAB 22
+//   1  = Lab 1.1   12 = Lab 1.2   2 = Lab 2   22 = Lab 2.2 (FreeRTOS, C)   3 = Lab 3
+#define SELECTED_LAB 3
 // ============================================================================
 
 // ============================================================================
@@ -96,6 +96,23 @@ static int uart_putchar(char c, FILE *stream)
     return 0;
 }
 
+static int uart_getchar(FILE *stream)
+{
+    while (!Serial.available()) {}
+    return Serial.read();
+}
+
+static void serial_stdio_init(unsigned long baudRate)
+{
+    Serial.begin(baudRate);
+    unsigned long startMs = millis();
+    while (!Serial && (millis() - startMs < 1500UL)) {}
+
+    fdev_setup_stream(&uart_stream, uart_putchar, uart_getchar, _FDEV_SETUP_RW);
+    stdout = &uart_stream;
+    stdin  = &uart_stream;
+}
+
 // ============================================================================
 // Lab includes
 // ============================================================================
@@ -118,6 +135,10 @@ static int uart_putchar(char c, FILE *stream)
     #include "Lab2_2/Lab2_2_main.h"
 #endif
 
+#if SELECTED_LAB == 3
+    #include "Lab3/Lab3_main.h"
+#endif
+
 // ============================================================================
 // Arduino entry points
 // ============================================================================
@@ -127,14 +148,14 @@ void setup()
     wdt_disable();
 
 #if SELECTED_LAB == 22
-    Serial.begin(9600);
-    while (!Serial) { ; }
-
-    /* Redirect stdout to UART so printf() works */
-    fdev_setup_stream(&uart_stream, uart_putchar, NULL, _FDEV_SETUP_WRITE);
-    stdout = &uart_stream;
+    serial_stdio_init(9600);
 
     printf("[main] === Lab 2.2 starting ===\n");
+#endif
+
+#if SELECTED_LAB == 3
+    serial_stdio_init(9600);
+    printf("[main] === Lab 3 starting ===\n");
 #endif
 
 #if SELECTED_LAB == 1
@@ -145,6 +166,8 @@ void setup()
     lab2_setup();
 #elif SELECTED_LAB == 22
     lab2_2_setup();
+#elif SELECTED_LAB == 3
+    lab3_setup();
 #endif
 }
 
@@ -158,5 +181,7 @@ void loop()
     lab2_loop();
 #elif SELECTED_LAB == 22
     lab2_2_loop();
+#elif SELECTED_LAB == 3
+    lab3_loop();
 #endif
 }

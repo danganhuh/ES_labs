@@ -121,80 +121,1254 @@ i.	Relevant Case Study Demonstrating Applicability
 Modern smart home locks implement functionality similar to the proposed laboratory system but at a larger scale. They typically include a physical keypad for PIN entry, LED or LCD indicators for status feedback, and smartphone application support for remote access. Many systems also integrate with voice assistants and maintain internal logic for password verification, keypad debouncing (20–50 ms), state tracking (locked, unlocked, jammed), event logging, and battery monitoring with low-power warnings.
 Commercial office entry systems expand on this concept by adding features such as card readers, network connectivity for centralized reporting, multi-level access control, emergency override mechanisms, and full audit trails of entry events. Their operation is commonly structured around a Finite State Machine (FSM), including states such as IDLE, READING_PIN, VERIFYING, GRANTING_ACCESS, DENYING_ACCESS, and ERROR, ensuring deterministic and secure behavior.
 Automotive vehicle locking systems follow similar embedded design principles. They support push-button lock/unlock via key fobs, configurable door and climate settings, time-based auto-lock functions, and emergency unlock procedures, all integrated with the vehicle’s central computer. Timing requirements are strict, with lock/unlock responses typically under 100 ms, debouncing intervals of 20–50 ms, short LED feedback durations, and deterministic state transitions—characteristics that align closely with the laboratory implementation.
-2.	System Design
-The modular implementation (Figure 1) respects the principle of separation between interface and implementation. Header files (.h) declare classes, functions, and public methods available to other modules, serving as contracts between components. Source files (.cpp) contain the actual implementation logic, including initialization routines and command handling procedures [1]. 
-  
+The modular implementation (Figure 1) follows separation between interface and implementation. Header files (.h) define task function prototypes and shared data types, while source files (.c) implement FreeRTOS task functions for button debouncing, statistics accumulation, LED feedback, and periodic reporting. The C++ bridge (main.cpp) provides hardware wrappers and UART stdio redirection.
+ 
 Figure 1: Structure of the laboratory work
-The architectural design of the system is based on a clear separation between the application logic and peripheral drivers, organized in a set of distinct layers: MCAL (Microcontroller Abstraction Layer), ECAL (Electronic Control Abstraction Layer), SRV (Service Layer), MCU and ECU. The periferals are interacting with the GPIO drivers and modules, as presented in the following figure (Figure 2).
-
+The architecture separates application tasks from RTOS services, C-callable hardware wrappers, and Arduino/AVR hardware abstraction (Figure 2). SharedState centralizes all inter-task data with mutex and semaphore handles. FreeRTOS manages preemptive scheduling, task switching, and blocking delays. The fdev_setup_stream mechanism redirects printf to UART TX and scanf to UART RX [3].
  
 Figure 2: Architecture schema
-The diagram below (Figure 3) shows how the system looks from the perspective of the user. They press buttons, and between the results, the components interact internally, and return a visual feedback depending on the situation.
-
+From the user perspective (Figure 3), interaction begins with button presses on D4. During operation, each press/release event produces a formatted printf event log, while LEDs provide visual feedback: green for short press, red for long press, and yellow blinks proportional to press type.
  
 Figure 3: User interaction 
-
-The next diagram, the flowchart (Figure 4) illustrates the operational, beginning when a user initiates the process by pressing the "*" key to display the main menu. From the primary decision node, the user can select one of four distinct functional paths using specific codes: locking the system immediately (0#), toggling the lock status by entering a password (1#), updating the system password (2#), or viewing system statistics (3#).
-The most complex path, the password-entry sequence (1#), utilizes a secondary decision diamond to validate the user's input. If the password is correct, the system triggers the "Unlock system" state and activates a green LED; if incorrect, it maintains the "Lock system" state and activates a red LED. Other administrative functions, such as the password reset flow, require the user to input both the old and new credentials. The final merge states at the bottom of the diagram indicate logical merge points where the system returns to a standby state or resets for the next user interaction.
+The activity diagram (Figure 4) starts with hardware initialization. After FreeRTOS scheduler starts, TaskMeasurement polls and debounces the button, updates stats under mutex, and queues each event. TaskStatistics blocks on queue receive, consumes events, and drives LED feedback with vTaskDelay. TaskReporting periodically snapshots and resets statistics under mutex and prints aggregated metrics via printf.
  
 Figure 4: Activity diagram
-This state diagram (Figure 5) represents the menu-driven logic of the electronic lock system. The system starts in STATE_MENU, where the user selects one of several operations (Op ‘0’–‘3’) using the keypad: Op ‘0’ → LOCKED: Executes the locking action immediately. If the operation is successful, the Red LED is turned on to indicate the locked state. Op ‘1’ → INPUT_UNLOCK: Prompts the user to enter a password to unlock. The system checks the password: If correct, the state transitions to UNLOCKED, the Green LED is lit, and access is granted. If incorrect, the system signals an error (Red LED) and returns to the menu. Op ‘2’ → INPUT_CHANGE_OLD: Prompts the user to enter the current password to authorize a password change. If validated, the system moves to INPUT_CHANGE_NEW to set a new password; confirmation triggers Green LED feedback, while any error (incorrect old password) triggers the Red LED. Op ‘3’ → SHOW_STATUS: Instantly displays the current system status. If a password check is required (e.g., for restricted status view), the diagram includes a validation step before showing the result. After completing any operation, the system returns to STATE_MENU, ready for the next user input. This FSM ensures deterministic behavior, clear visual feedback, and secure handling of password-protected operations.
+The state representation (Figure 5) for runtime behavior includes implicit states such as IDLE (tasks blocked on queue/delay), DEBOUNCING (consecutive matching samples), EVENT_QUEUED, BLINK_ACTIVE (yellow LED toggling via vTaskDelay), and REPORT_WINDOW (statistics snapshot and reset). Transitions are triggered by debounced button transitions, queue send/receive, and vTaskDelayUntil expiration.
  
 Figure 5: State diagram for the system
-The sequence diagram (Figure 6) maps the communication between the user, physical hardware, and the system software during a code-entry event. The process initiates with the User inputting a code via the Keypad, which is then relayed to the Lab1_2.cpp logic file for validation. Upon verification, the software transmits a command set to the Arduino microcontroller. The Arduino then coordinates the hardware response by sending a power impulse to the LCD to print a status message while concurrently signaling the software to update the internal system state. The following sequence diagram is true to any state of the system
+The sequence diagram (Figure 6) captures interaction among TaskMeasurement, SharedState (queue + mutex), TaskStatistics, LED GPIO wrappers, and TaskReporting. TaskMeasurement updates counters under statsMutex and sends press events to pressEventQueue. TaskStatistics receives queued events and drives LEDs. TaskReporting locks statsMutex, reads and resets counters, then prints via printf.
  
-Figure 6: Sequence diagram of user action
-The electrical implementation (Figure 7) consists of an Arduino Uno microcontroller serving as the central processor, with a 4x4 Keypad connected to analog pins A0–A3 and digital pins 6–9 for user input. The visual output is handled by an LM016L LCD wired to digital pins 5 through 2, providing real-time status messages. Two LEDs, Red and Green, are connected to digital pins 13 and 10 through 220Ω resistors to limit current and protect the components, while their cathodes are tied to ground. 
+Figure 6: Sequence diagram of user action, 1 iteration
+The electrical implementation (Figure 7) uses an ATmega2560-based board with a push-button on D4 (to GND, internal pull-up enabled), green LED on D13, red LED on D12, yellow LED on D11 (each through appropriate resistor to GND), and serial USB connection for printf UART communication.
+
+
  
 Figure 7: Modelated electronic schema
-The system's operational logic (Figure 8) is divided into three functional sub-processes: the LED Feedback Loop manages visual signaling by toggling an LED based on the lock status for a duration under 1000ms. The LCD Menu Navigation handles the user interface, initializing with a "Smart Lock" prompt and transitioning to a menu that responds to numerical inputs 0–3. Finally, the Key Input Validation maintains a polling state that waits for a keypress and executes commands only after detecting the "#" termination character.
+Task priority diagram (Figure 8) includes three concurrent FreeRTOS tasks: TaskMeasurement (priority 3, polls every tick), TaskStatistics (priority 2, blocks on queue receive), and TaskReporting (priority 1, periodic via vTaskDelayUntil every 10 s). Preemptive scheduling ensures TaskMeasurement always runs promptly when ready, while TaskStatistics and TaskReporting execute when higher-priority tasks are blocked.
  
-Figure 8: Behavior diagrams for each peripheral
-
+Figure 8: Task priority diagram
 3.	Results
-The system was tested using the PlatformIO and Wokwi [4] simulator in VS for the Arduino Mega 2560, on hardware for the Arduino Uno. When the power is sent to the hardware, the LCD shows appropriate welcome message and waits for ‘*’ key to be pressed. When the key is pressed, menu is shown, and depending on the user actions, an appropriate message is displayed as response on LCD and the respective color LED is on (depending on the locked/unlocked status of the system). Then, the system will return to waiting on appropriate code. The testing requirements definition is shown in the following table (Table 1). 
+The system was tested using PlatformIO and Wokwi simulator, then validated on hardware. After startup, the serial monitor displays FreeRTOS initialization messages and prompts the user to enter the short/long threshold via scanf. During operation, each press release generates a printf log line with measured duration and SHORT/LONG label. TaskStatistics activates green or red LED based on press type and blinks yellow LED (5 times for short, 10 for long) using vTaskDelay. TaskReporting prints periodic reports with total, short, long, and average duration via printf, then resets counters for the next 10-second interval.
+The testing requirements definition is shown in the following table (Table 1).
 Table 1: Testing requirements
 ID	Test category	Test description	Expected result
-T1	Initialization	Power on system	LCD shows initial message; system in LOCKED state; Red LED ON, Green LED OFF
-T2	Lock Operation	Execute *0#
+T1	Initialization	Power on system, enter threshold via scanf	printf shows startup messages; FreeRTOS tasks created; LEDs self-test; threshold acknowledged
+T2	RTOS Scheduling	Observe concurrent task execution	Three tasks run with assigned priorities; preemption occurs correctly
+T3	Short Press	Press and release below threshold	printf shows SHORT; green LED on; 5 yellow blinks (2.5s total)
+T4	Long Press	Press and hold above threshold	printf shows LONG; red LED on; 10 yellow blinks (5s total)
+T5	Semaphore Sync	Generate multiple presses	TaskStatistics responds to each semaphore signal; no missed or duplicate events
+T6	Mutex Protection	Concurrent access to shared data	Statistics remain coherent; no data corruption under rapid presses
+T7	Periodic Report	Wait 10s window	printf shows total/short/long/avg; statistics reset after report
+T8	No-Press Window	No interaction for one report period	Report shows zeros via printf; system remains stable
+T9	scanf Input	Enter custom threshold at startup	System uses entered value for SHORT/LONG classification
+T10	LED Feedback	Alternate short and long presses	Green/red LED and yellow blink count correspond to event class
+T11	Debounce	Rapid repeated button actions	No false duplicate events under normal physical operation
+T12	Stability	Continuous repeated operations over minutes	System runs without deadlock, stack overflow, or task starvation; reports remain coherent
 
-	LCD displays "System Locked"; Red LED active; state = LOCKED
-T3	Unlock (Valid)	Enter correct password (1234)
-
-	LCD shows "Access Granted"; Green LED active; state = UNLOCKED
-T4	Unlock (Invalid)	Enter wrong password	LCD shows "Wrong Code!"; Red LED active; state remains LOCKED
-T5	Change Pwd (Valid)	Enter correct old password and new password	LCD confirms change; Green LED indicates success; password updated
-T6	Change Pwd (Invalid)	Enter wrong old password	LCD shows error; Red LED indicates failure; password unchanged	
-T7	Status Display	Execute *3#	LCD displays correct system state (LOCKED/UNLOCKED); no unintended LED activity
-T8	LED Feedback	Trigger success and error operations	LEDs activate correctly and remain on ~1 second
-T9	Keypad & LCD Response	Press keys rapidly	LCD updates immediately; no duplicate/missed inputs
-T10	Reliability	Perform repeated operations over time	System operates without crashes or abnormal behavior
-
-Next images are the results of the testing, that includes both simulations (Figure 9-13) and real hardware (Figure 14). All video footage are in the drive: 
+Next images are the results of testing, including simulation captures (Figure 9-11) and hardware captures (Figure 12-14). All video footages are in the drive: 
 https://drive.google.com/drive/folders/1irxzplvWRQgibA78ml7MvxLl461tc6hT?usp=sharing
+
  
-Figure 9: Wrong code result
+Figure 9: Behaviour on short press
  
-Figure 10: Code introduction
+Figure 10: Behaviour on long press
  
-Figure 11: Show status of the system
+Figure 11: Schema in the simulator
+ 
+Figure 12: Report clearing
   
-Figure 12: Status of the system: OPEN
-
+Figure 13: Short press and yellow blink (in this photo it’s on high)
  
-Figure 13: Access granted
+Figure 14: Long press and yellow blink (in this photo it’s on low)
  
-Figure 14: Initialization on hardware
+Figure 14: Report printing
 4.	Conclusions
-The implemented smart lock system operates reliably within the constraints of a simple embedded application based on the Arduino platform. The system supports core functionalities such as locking, unlocking using a password, password modification, and status display. While the current implementation provides essential access control features, it does not include advanced capabilities such as persistent password storage (e.g., EEPROM), non-blocking timing mechanisms, or extended security mechanisms. Future improvements could include implementing non-blocking state management (removing delay-based timing), adding EEPROM-based password storage, integrating a buzzer for audio feedback, or expanding the command structure for additional security features.
-The objectives of the laboratory work were successfully achieved. The principles of embedded system design, digital input processing (keypad), and hardware output control (LCD and LEDs) were understood and applied in practice. The system demonstrates clear separation between input handling, command processing, state management, and output feedback, resulting in a modular and maintainable architecture. The application correctly interprets user commands entered through the keypad and controls visual feedback components accordingly.
+The implemented laboratory work application meets the requirements for a preemptive real-time embedded system using FreeRTOS with inter-task synchronization via semaphores and mutexes. The FreeRTOS scheduler provides efficient priority-based preemption, allowing TaskMeasurement to respond promptly to button events while TaskStatistics blocks on semaphore signals and TaskReporting executes periodically at lowest priority. Standard C printf/scanf, redirected to UART via fdev_setup_stream, provide portable and formatted serial I/O for diagnostics, event logging, and user configuration.
+The objectives of the laboratory work were achieved: preemptive multitasking principles were implemented using FreeRTOS, inter-task communication was validated through binary semaphores and mutex-protected shared structures, and visual feedback was demonstrated through multi-LED control with RTOS-based timing. The scanf-based threshold configuration at startup demonstrates bidirectional serial I/O capability. The periodic reporting mechanism provides clear runtime observability via printf and confirms coherent statistics over fixed windows.
+Compared to the bare-metal cyclic scheduler approach (Lab2_1), FreeRTOS provides cleaner task isolation, efficient blocking (no polling overhead), built-in synchronization primitives, and easier scalability for additional tasks. The trade-offs include higher RAM consumption for task stacks and RTOS kernel overhead, which are acceptable on the ATmega2560 platform.
+Future improvements can include: introduction of task notifications (xTaskNotify) as a lighter alternative to binary semaphores, bounded queue-based event passing (xQueueSend/xQueueReceive), optional EEPROM persistence for long-term counters, runtime threshold reconfiguration via a serial command task using scanf, and stack high-water-mark monitoring for optimized memory usage.
 
-During the preparation of this report, it was used ChatGPT, Copilot and other AI-based assistance tools for generating and consolidating textual and code and partially architecture design content. The generated information was reviewed, validated, and adjusted according to the laboratory work requirements.
+During the preparation of this report, it was used ChatGPT, Copilot and other AI-based assistance tools for generating and consolidating textual and code contents, as well as partially architecture design content. The generated information was reviewed, validated, and adjusted according to the laboratory work requirements.
 Bibliography
-[1] R. L. Boylestad and L. Nashelsky, Electronic Devices and Circuit Theory, 11th ed. Upper Saddle River, NJ, USA: Pearson Education, 2013.
-[2] J. G. Ganssle, The Art of Designing Embedded Systems, 2nd ed. Burlington, MA, USA: Elsevier, 2007.
-[3] M. Barr, Embedded C Programming and the Atmel AVR, 2nd ed. Oxford, U.K.: Newnes, 2006.
+[1] “What is an Embedded Operating System and the Different Types,” Total Phase Blog. Accessed: Feb. 20, 2026. [Online]. Available: https://www.totalphase.com/blog/2020/02/what-is-an-embedded-operating-system-and-the-different-types/
+[2] G Mostofa BD. 8051 Push Button Interfacing. https://gmostofabd.github.io/8051-Push Button/ 
+[3] Andrei Bragarenco, Galina Marusic, and Calin Ciufudean. “Layered architecture approach of the sensor software component stack for the Internet of Things applications”. In: WSEAS Transactions on Computer Research 7 (2019), pp. 124–135.
 [4] “Mega 2560 Rev3 | Arduino Documentation.”. [Online]. Available: https://docs.arduino.cc/hardware/mega-2560/
 [5] “Welcome to Wokwi! | Wokwi Docs.” Accessed: [Online]. Available: https://docs.wokwi.com/
 [6] GitHub repository. Available: https://github.com/danganhuh/ES_labs
+Annex
+LedDriver.cpp
+/**
+ * @file LedDriver.cpp
+ * @brief ECAL Layer - LED Driver Implementation
+ * 
+ * Implements the LED hardware abstraction driver.
+ * Uses Arduino MCAL (digitalWrite, pinMode, digitalRead) to control GPIO.
+ * 
+ * Architecture: Lab -> LedDriver -> GPIO MCAL -> Arduino GPIO Hardware
+ */
+
+#include "LedDriver.h"
+
+/**
+ * @brief Constructor - Store the GPIO pin number
+ */
+LedDriver::LedDriver(uint8_t pin)
+{
+    ledPin = pin;
+}
+
+/**
+ * @brief Initialize LED pin as output and set to OFF
+ * 
+ * Uses MCAL: pinMode() and digitalWrite() from Arduino core
+ */
+void LedDriver::Init()
+{
+    pinMode(ledPin, OUTPUT);      // MCAL: Configure as output
+    digitalWrite(ledPin, LOW);     // MCAL: Set low (LED off)
+}
+
+/**
+ * @brief Turn LED ON (set pin HIGH)
+ * 
+ * Uses MCAL: digitalWrite()
+ */
+void LedDriver::On()
+{
+    digitalWrite(ledPin, HIGH);    // MCAL: Set high (LED on)
+}
+
+/**
+ * @brief Turn LED OFF (set pin LOW)
+ * 
+ * Uses MCAL: digitalWrite()
+ */
+void LedDriver::Off()
+{
+    digitalWrite(ledPin, LOW);     // MCAL: Set low (LED off)
+}
+
+/**
+ * @brief Toggle LED state
+ * 
+ * Reads current pin state and inverts it.
+ * Uses MCAL: digitalWrite() and digitalRead()
+ */
+void LedDriver::Toggle()
+{
+    digitalWrite(ledPin, !digitalRead(ledPin));  // MCAL: Toggle pin
+}
+
+
+LedDriver.h
+/**
+ * @file LedDriver.h
+ * @brief ECAL Layer - LED Hardware Abstraction Driver
+ * 
+ * Provides a high-level interface for controlling an LED connected to
+ * a GPIO pin on the Arduino microcontroller.
+ * 
+ * This driver abstracts away direct Arduino digitalWrite/pinMode calls,
+ * allowing labs to control LEDs without knowing pin details.
+ * 
+ * Usage:
+ *   LedDriver led(13);  // LED on pin 13
+ *   led.Init();         // Configure as output
+ *   led.On();           // Turn on
+ *   led.Off();          // Turn off
+ *   led.Toggle();       // Toggle state
+ */
+
+#ifndef LedDriver_H
+#define LedDriver_H
+
+#include <Arduino.h>
+
+/**
+ * @class LedDriver
+ * @brief Digital output driver for controlling an LED
+ * 
+ * Wraps Arduino GPIO functions (digitalWrite, pinMode, digitalRead)
+ * to provide a clean interface for LED control.
+ */
+class LedDriver
+{
+private:
+    uint8_t ledPin;  // GPIO pin number for this LED
+
+public:
+    /**
+     * @brief Constructor
+     * @param pin GPIO pin number where LED is connected
+     */
+    LedDriver(uint8_t pin);
+    
+    /**
+     * @brief Initialize the LED (configure pin as output, set to OFF)
+     */
+    void Init();
+    
+    /**
+     * @brief Turn LED ON
+     */
+    void On();
+    
+    /**
+     * @brief Turn LED OFF
+     */
+    void Off();
+    
+    /**
+     * @brief Toggle LED state (ON->OFF or OFF->ON)
+     */
+    void Toggle();
+};
+
+#endif
+
+
+Lab2_2_main.c
+/**
+ * @file Lab2_2_main.c
+ * @brief Pure-C Lab 2.2 entry – creates FreeRTOS tasks, inits hardware
+ */
+
+#include "Lab2_2_main.h"
+#include "Lab2_2_Shared.h"
+#include "avr_helpers.h"
+#include "MeasurementTask.h"
+#include "StatisticsTask.h"
+#include "ReportingTask.h"
+
+#include <stdio.h>
+#include <Arduino_FreeRTOS.h>
+#include <task.h>
+#include <semphr.h>
+#include <queue.h>
+
+/* ── Global shared state (declared extern in Lab2_2_Shared.h) ──── */
+SharedState g_shared;
+
+void lab2_2_setup(void)
+{
+    /* --- Hardware pin init via C wrappers --- */
+    hw_pin_mode(BTN_PIN, PIN_MODE_INPUT_PULLUP);
+    hw_pin_mode(LED_GREEN_PIN, PIN_MODE_OUTPUT);
+    hw_pin_mode(LED_RED_PIN,   PIN_MODE_OUTPUT);
+    hw_pin_mode(LED_YELLOW_PIN, PIN_MODE_OUTPUT);
+
+    hw_digital_write(LED_GREEN_PIN,  PIN_LOW);
+    hw_digital_write(LED_RED_PIN,    PIN_LOW);
+    hw_digital_write(LED_YELLOW_PIN, PIN_LOW);
+
+    printf("[Lab2_2] FreeRTOS monitor starting\n");
+
+    /* --- LED self-test (proves wiring works) --- */
+    hw_digital_write(LED_GREEN_PIN, PIN_HIGH);
+    hw_delay_ms(300);
+    hw_digital_write(LED_GREEN_PIN, PIN_LOW);
+
+    hw_digital_write(LED_RED_PIN, PIN_HIGH);
+    hw_delay_ms(300);
+    hw_digital_write(LED_RED_PIN, PIN_LOW);
+
+    hw_digital_write(LED_YELLOW_PIN, PIN_HIGH);
+    hw_delay_ms(300);
+    hw_digital_write(LED_YELLOW_PIN, PIN_LOW);
+
+    /* --- Zero shared state --- */
+    g_shared.stats.totalPresses   = 0;
+    g_shared.stats.shortPresses   = 0;
+    g_shared.stats.longPresses    = 0;
+    g_shared.stats.totalDurationMs = 0;
+    g_shared.stats.shortDurationMs = 0;
+    g_shared.stats.longDurationMs  = 0;
+
+    /* --- Create synchronisation primitives --- */
+    g_shared.pressEventQueue = xQueueCreate(PRESS_EVENT_QUEUE_LEN,
+                                            sizeof(PressEventData));
+    g_shared.statsMutex     = xSemaphoreCreateMutex();
+    g_shared.ioMutex        = xSemaphoreCreateMutex();
+
+    if (!g_shared.pressEventQueue || !g_shared.statsMutex || !g_shared.ioMutex)
+    {
+        printf("[Lab2_2] FATAL: RTOS primitive alloc failed!\n");
+        for (;;) { /* halt */ }
+    }
+    printf("[Lab2_2] Queue + mutexes OK\n");
+
+    /* --- Create FreeRTOS tasks --- */
+    BaseType_t ok;
+
+    ok = xTaskCreate(TaskMeasurement, "BtnMeas", 512, (void *)0, 3, (TaskHandle_t *)0);
+    if (ok != pdPASS) { printf("FAIL: BtnMeas\n"); for(;;); }
+    printf("[Lab2_2] BtnMeas task created (pri 3, 512w)\n");
+
+    ok = xTaskCreate(TaskStatistics,  "Stats",   512, (void *)0, 2, (TaskHandle_t *)0);
+    if (ok != pdPASS) { printf("FAIL: Stats\n");   for(;;); }
+    printf("[Lab2_2] Stats task created (pri 2, 512w)\n");
+
+    ok = xTaskCreate(TaskReporting,   "Report",  512, (void *)0, 1, (TaskHandle_t *)0);
+    if (ok != pdPASS) { printf("FAIL: Report\n");  for(;;); }
+    printf("[Lab2_2] Report task created (pri 1, 512w)\n");
+
+    printf("[Lab2_2] All tasks created - scheduler starts after setup()\n");
+}
+
+void lab2_2_loop(void)
+{
+    /* Called from idle-task hook – must NOT block */
+}
+Lab2_2_main.h
+/**
+ * @file Lab2_2_main.h
+ * @brief Pure-C header for Lab 2.2 setup/loop entry points
+ */
+
+#ifndef LAB2_2_MAIN_H
+#define LAB2_2_MAIN_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void lab2_2_setup(void);
+void lab2_2_loop(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* LAB2_2_MAIN_H */
+
+Lab2_2_Shared.h
+/**
+ * @file Lab2_2_Shared.h
+ * @brief Pure-C shared data structures for Lab 2.2 FreeRTOS tasks
+ */
+
+#ifndef LAB2_2_SHARED_H
+#define LAB2_2_SHARED_H
+
+#include <stdint.h>
+#include <Arduino_FreeRTOS.h>
+#include <semphr.h>
+#include <queue.h>
+
+/* ── Pin assignments ───────────────────────────────────────────── */
+#define BTN_PIN             4
+#define LED_GREEN_PIN       13
+#define LED_RED_PIN         12
+#define LED_YELLOW_PIN      11
+
+/* ── Thresholds ────────────────────────────────────────────────── */
+#define SHORT_THRESHOLD_MS  500
+#define DEBOUNCE_SAMPLES    2
+#define PRESS_EVENT_QUEUE_LEN  64
+
+/* ── Shared data types ─────────────────────────────────────────── */
+typedef struct {
+    uint32_t durationMs;
+    uint8_t  isShort;       /* 1 = short, 0 = long */
+} PressEventData;
+
+typedef struct {
+    uint16_t totalPresses;
+    uint16_t shortPresses;
+    uint16_t longPresses;
+    uint32_t totalDurationMs;
+    uint32_t shortDurationMs;
+    uint32_t longDurationMs;
+} PressStats;
+
+typedef struct {
+    QueueHandle_t     pressEventQueue;
+    SemaphoreHandle_t statsMutex;
+    SemaphoreHandle_t ioMutex;
+    PressStats        stats;
+} SharedState;
+
+/* Defined in Lab2_2_main.c */
+extern SharedState g_shared;
+
+#endif /* LAB2_2_SHARED_H */
+
+
+ButtonDriver.h
+/**
+ * @file ButtonDriver.h
+ * @brief ECAL Layer - Push-Button Hardware Abstraction Driver
+ *
+ * Provides a non-blocking, debounced interface for a push-button.
+ * Supports both active-low(INPUT_PULLUP) and active-high(INPUT) wiring.
+ * The driver is designed to be called periodically (every ~20 ms)
+ * via a bare-metal task scheduler; it never busy-waits.
+ *
+ * Debounce algorithm:
+ *   The raw pin reading must remain stable for DEBOUNCE_SAMPLES
+ *   consecutive Update() calls before the state is accepted.
+ *   At 20 ms period this gives 5 × 20 ms = 100 ms debounce window,
+ *   which is well within the ~200 ms minimum button press interval.
+ *
+ * Pin convention:
+ *   Configurable at construction time:
+ *   - active-low  + INPUT_PULLUP (button to GND)
+ *   - active-high + INPUT        (button to +5V with external pull-down)
+ *
+ * Usage example (bare-metal task):
+ *   ButtonDriver btn(A4);
+ *   btn.Init();
+ *   // --- called every 20 ms ---
+ *   btn.Update();
+ *   if (btn.WasJustReleased()) {
+ *       uint32_t dur = btn.GetLastPressDuration(); // ms
+ *   }
+ *
+ * Architecture: Lab2 -> ButtonDriver -> GPIO MCAL -> Arduino GPIO Hardware
+ */
+
+#ifndef BUTTON_DRIVER_H
+#define BUTTON_DRIVER_H
+
+#include <Arduino.h>
+
+class ButtonDriver
+{
+public:
+
+    explicit ButtonDriver(uint8_t pin,
+                     bool activeLow = true,
+                     bool useInternalPullup = true);
+
+    void Init();
+
+    void Update();
+
+    bool IsPressed() const;
+
+    bool WasJustReleased();
+
+    uint32_t GetLastPressDuration() const;
+
+private:
+    uint8_t  _pin;                    ///< GPIO pin index
+    bool     _activeLow;              ///< true: pressed=LOW, false: pressed=HIGH
+    bool     _useInternalPullup;      ///< true: pinMode INPUT_PULLUP, false: INPUT
+    bool     _debouncedState;         ///< Accepted (debounced) button state
+    uint8_t  _sampleCount;            ///< Consecutive samples counter
+    bool     _releaseFlag;            ///< Set on falling edge, cleared after read
+    uint32_t _pressStartMs;           ///< millis() timestamp of last press start
+    uint32_t _lastDurationMs;         ///< Duration of the last completed press
+
+    /** Number of consecutive matching samples required to accept a state change */
+    static const uint8_t DEBOUNCE_SAMPLES = 5;
+};
+
+#endif // BUTTON_DRIVER_H
+ButtonDriver.cpp
+/**
+ * @file ButtonDriver.cpp
+ * @brief ECAL Layer - Push-Button Driver Implementation
+ *
+ * Implements the non-blocking debounce state machine for a push-button.
+ *
+ * Debounce logic summary:
+ *   • Raw pin read interpreted by configured polarity:
+ *       - active-low  => LOW = pressed
+ *       - active-high => HIGH = pressed
+ *   • While the raw reading matches the accepted state → reset sample counter.
+ *   • While differing → increment counter.
+ *   • Once counter reaches DEBOUNCE_SAMPLES the new state is accepted:
+ *       - Press  edge: record start time via millis().
+ *       - Release edge: compute duration, set release flag.
+ *
+ * Architecture: Lab2 -> ButtonDriver -> GPIO MCAL -> Arduino GPIO Hardware
+ */
+
+#include "ButtonDriver.h"
+
+ButtonDriver::ButtonDriver(uint8_t pin,
+                                                     bool activeLow,
+                                                     bool useInternalPullup)
+    : _pin(pin),
+            _activeLow(activeLow),
+            _useInternalPullup(useInternalPullup), 
+      _debouncedState(false),
+      _sampleCount(0),
+      _releaseFlag(false),
+      _pressStartMs(0),
+      _lastDurationMs(0)
+{
+}
+
+void ButtonDriver::Init()
+{
+    pinMode(_pin, _useInternalPullup ? INPUT_PULLUP : INPUT);
+
+    _debouncedState = false;
+    _sampleCount    = 0;
+    _releaseFlag    = false;
+    _pressStartMs   = 0;
+    _lastDurationMs = 0;
+}
+
+void ButtonDriver::Update()
+{
+    int rawValue = digitalRead(_pin);               // MCAL: digitalRead
+    bool rawPressed = _activeLow ? (rawValue == LOW) : (rawValue == HIGH);
+
+    if (rawPressed == _debouncedState)
+    {
+        // Stable – reset the transient counter
+        _sampleCount = 0;
+        return;
+    }
+
+    // State differs from accepted value – accumulate samples
+    _sampleCount++;
+
+    if (_sampleCount >= DEBOUNCE_SAMPLES)
+    {
+        _sampleCount = 0;
+
+        bool prevState   = _debouncedState;
+        _debouncedState  = rawPressed;
+
+        if (!prevState && _debouncedState)
+        {
+            // Rising edge: button just pressed
+            _pressStartMs = millis();              // MCAL: millis()
+        }
+        else if (prevState && !_debouncedState)
+        {
+            // Falling edge: button just released
+            _lastDurationMs = millis() - _pressStartMs;  // MCAL: millis()
+            _releaseFlag    = true;
+        }
+    }
+}
+
+bool ButtonDriver::IsPressed() const
+{
+    return _debouncedState;
+}
+
+bool ButtonDriver::WasJustReleased()
+{
+    if (_releaseFlag)
+    {
+        _releaseFlag = false;
+        return true;
+    }
+    return false;
+}
+
+uint32_t ButtonDriver::GetLastPressDuration() const
+{
+    return _lastDurationMs;
+}
+
+main.cpp
+/**
+ * @file main.cpp
+ * @brief APP Layer - Laboratory Experiment Dispatcher
+ *
+ * Selects the active lab via SELECTED_LAB macro.
+ * Also provides extern "C" hardware wrappers so the Lab2_2 .c files
+ * can call Arduino (C++) APIs like Serial, pinMode, etc.
+ *
+ * Architecture: APP -> SRV(Lab) -> ECAL(Drivers) -> MCAL(Arduino) -> HW
+ */
+
+#include <Arduino.h>
+#include <avr/wdt.h>
+#include <util/delay.h>
+#include <stdio.h>
+
+// ============================================================================
+// CONFIGURATION – change this value to select a lab
+// ============================================================================
+//   1  = Lab 1.1   12 = Lab 1.2   2 = Lab 2   22 = Lab 2.2 (FreeRTOS, C)
+#define SELECTED_LAB 22
+// ============================================================================
+
+// ============================================================================
+// C-callable hardware wrappers (used by Lab2_2/*.c via avr_helpers.h)
+// ============================================================================
+extern "C" {
+
+void hw_pin_mode(uint8_t pin, uint8_t mode)
+{
+    pinMode(pin, mode);
+}
+
+void hw_digital_write(uint8_t pin, uint8_t val)
+{
+    digitalWrite(pin, val);
+}
+
+uint8_t hw_digital_read(uint8_t pin)
+{
+    return (uint8_t)digitalRead(pin);
+}
+
+unsigned long hw_millis(void)
+{
+    return millis();
+}
+
+void hw_delay_ms(unsigned long ms)
+{
+    /* Busy-wait – safe before AND after scheduler starts.
+       Uses avr-libc _delay_ms(1) which is a calibrated busy loop. */
+    while (ms > 0) { _delay_ms(1); ms--; }
+}
+
+void dbg_print(const char *s)
+{
+    Serial.print(s);
+}
+
+void dbg_print_num(long n)
+{
+    Serial.print(n);
+}
+
+void dbg_println(const char *s)
+{
+    Serial.println(s);
+}
+
+void dbg_println_num(long n)
+{
+    Serial.println(n);
+}
+
+void dbg_println_empty(void)
+{
+    Serial.println();
+}
+
+void dbg_flush(void)
+{
+    Serial.flush();
+}
+
+} /* extern "C" */
+
+// ============================================================================
+// UART stdio redirection – makes printf() -> Serial TX
+// ============================================================================
+static FILE uart_stream;
+
+static int uart_putchar(char c, FILE *stream)
+{
+    Serial.write(c);
+    return 0;
+}
+
+// ============================================================================
+// Lab includes
+// ============================================================================
+
+#if SELECTED_LAB == 1
+    #include "Lab1/Lab1.h"
+#endif
+
+#if SELECTED_LAB == 12
+    void lab1_2_setup();
+    void lab1_2_loop();
+#endif
+
+#if SELECTED_LAB == 2
+    void lab2_setup();
+    void lab2_loop();
+#endif
+
+#if SELECTED_LAB == 22
+    #include "Lab2_2/Lab2_2_main.h"
+#endif
+
+// ============================================================================
+// Arduino entry points
+// ============================================================================
+
+void setup()
+{
+    wdt_disable();
+
+#if SELECTED_LAB == 22
+    Serial.begin(9600);
+    while (!Serial) { ; }
+
+    /* Redirect stdout to UART so printf() works */
+    fdev_setup_stream(&uart_stream, uart_putchar, NULL, _FDEV_SETUP_WRITE);
+    stdout = &uart_stream;
+
+    printf("[main] === Lab 2.2 starting ===\n");
+#endif
+
+#if SELECTED_LAB == 1
+    Lab1_Setup();
+#elif SELECTED_LAB == 12
+    lab1_2_setup();
+#elif SELECTED_LAB == 2
+    lab2_setup();
+#elif SELECTED_LAB == 22
+    lab2_2_setup();
+#endif
+}
+
+void loop()
+{
+#if SELECTED_LAB == 1
+    Lab1_Loop();
+#elif SELECTED_LAB == 12
+    lab1_2_loop();
+#elif SELECTED_LAB == 2
+    lab2_loop();
+#elif SELECTED_LAB == 22
+    lab2_2_loop();
+#endif
+}
+
+
+SerialStdioDriver.cpp
+/**
+ * @file SerialStdioDriver.cpp
+ * @brief ECAL Layer - Serial/LCD/Keypad Driver Implementation
+ * 
+ * Implements STDIO redirection for both serial and hardware (LCD/Keypad) I/O.
+ * Uses Arduino MCAL hardware drivers through LcdDriver and KeypadDriver.
+ * 
+ * Features:
+ * - SerialStdioInit(): Redirects printf() to serial, scanf() from serial
+ * - StdioInit(): Redirects printf() to LCD, scanf() from Keypad
+ * 
+ * Architecture: Lab -> StdioDriver -> UART or LCD/Keypad -> MCAL -> Hardware
+ */
+
+#include "SerialStdioDriver.h"
+#include "../lcd/LcdDriver.h"
+#include "../keypad/KeypadDriver.h"
+#include <stdio.h>
+
+// Forward declarations of global driver instances
+extern LcdDriver* g_lcdDriver;
+extern KeypadDriver* g_keypadDriver;
+
+// ============================================================================
+// SERIAL-BASED STDIO FUNCTIONS (for serial communication)
+// ============================================================================
+
+/**
+ * @brief Callback function for printf redirection to Serial
+ * 
+ * This function is called by printf() to output each character.
+ * It uses the Arduino MCAL Serial.write() to send to UART.
+ * 
+ * @param c Character to write
+ * @param stream FILE stream (unused)
+ * @return 0 on success
+ */
+static int SerialPutChar(char c, FILE *stream)
+{
+    Serial.write(c);  // MCAL: Write to Arduino serial
+    return 0;
+}
+
+/**
+ * @brief Callback function for scanf redirection from Serial
+ * 
+ * This function is called by scanf() to read each character.
+ * It uses the Arduino MCAL Serial.read() to receive from UART.
+ * Blocks until data is available on the serial port.
+ * 
+ * @param stream FILE stream (unused)
+ * @return Character read from serial
+ */
+static int SerialGetChar(FILE *stream)
+{
+    // Block until data available on serial port
+    while (!Serial.available()) {}
+    // Read and return one byte from UART
+    return Serial.read();  // MCAL: Read from Arduino serial
+}
+
+// Static FILE structures for serial redirection
+static FILE SerialStdOut;
+static FILE SerialStdIn;
+
+/**
+ * @brief Initialize STDIO redirection to Serial port
+ * 
+ * Sets up:
+ * - Arduino UART communication at specified baud rate
+ * - Redirects stdout to serial port for printf() support
+ * - Redirects stdin to serial port for scanf() support
+ * 
+ * @param baudRate Baud rate (e.g., 9600)
+ */
+void SerialStdioInit(unsigned long baudRate)
+{
+    // Initialize UART at specified baud rate
+    Serial.begin(baudRate);         // MCAL: Initialize serial
+    while (!Serial) {}              // Wait for serial connection
+
+    // Redirect stdout (printf) to serial port
+    fdev_setup_stream(&SerialStdOut, SerialPutChar, NULL, _FDEV_SETUP_WRITE);
+    stdout = &SerialStdOut;         // All printf() calls now go to serial
+
+    // Redirect stdin (scanf) to serial port
+    fdev_setup_stream(&SerialStdIn, NULL, SerialGetChar, _FDEV_SETUP_READ);
+    stdin = &SerialStdIn;           // All scanf() calls now read from serial
+}
+
+// ============================================================================
+// LCD/KEYPAD-BASED STDIO FUNCTIONS (for LCD/Keypad I/O)
+// ============================================================================
+
+/**
+ * @brief Callback function for printf redirection to LCD
+ * 
+ * This function is called by printf() to output each character.
+ * It uses the LcdDriver to display output on the LCD.
+ * 
+ * @param c Character to write
+ * @param stream FILE stream (unused)
+ * @return 0 on success
+ */
+static int LcdPutChar(char c, FILE *stream)
+{
+    if (g_lcdDriver) {
+        g_lcdDriver->PutChar(c);
+    }
+    return 0;
+}
+
+/**
+ * @brief Callback function for scanf redirection from Keypad
+ * 
+ * This function is called by scanf() to read each character.
+ * It uses the KeypadDriver to get input from the keypad.
+ * Blocks until a key is available on the keypad.
+ * 
+ * @param stream FILE stream (unused)
+ * @return Character read from keypad
+ */
+static int KeypadGetChar(FILE *stream)
+{
+    // Block until key available on keypad
+    if (g_keypadDriver) {
+        int c = g_keypadDriver->GetChar();
+        // Treat '#' as newline so scanf() sees end-of-input when user confirms
+        if (c == '#') return '\n';
+        return c;
+    }
+    return 0;
+}
+
+// Static FILE structures for LCD/Keypad redirection
+static FILE LcdStdOut;
+static FILE KeypadStdIn;
+
+/**
+ * @brief Initialize STDIO redirection to LCD and Keypad
+ * 
+ * Sets up:
+ * - Redirects stdout to LCD display for printf() support
+ * - Redirects stdin to Keypad for scanf() support
+ * 
+ * Prerequisites:
+ * - g_lcdDriver must be initialized (lcd.Init() called)
+ * - g_keypadDriver must be initialized (keypad.Init() called)
+ */
+void StdioInit()
+{
+    // Redirect stdout (printf) to LCD display
+    fdev_setup_stream(&LcdStdOut, LcdPutChar, NULL, _FDEV_SETUP_WRITE);
+    stdout = &LcdStdOut;         // All printf() calls now go to LCD
+
+    // Redirect stdin (scanf) to Keypad input
+    fdev_setup_stream(&KeypadStdIn, NULL, KeypadGetChar, _FDEV_SETUP_READ);
+    stdin = &KeypadStdIn;        // All scanf() calls now read from keypad
+}
+
+}
+
+	SerialStdioDriver.h
+/**
+ * @file SerialStdioDriver.h
+ * @brief ECAL Layer - STDIO Abstraction (Serial/LCD/Keypad)
+ * 
+ * Provides interfaces for standard I/O redirection.
+ * Supports both serial-based and hardware-based (LCD/Keypad) I/O.
+ * 
+ * Features:
+ * - SerialStdioInit(): Redirect printf/scanf to serial port
+ * - StdioInit(): Redirect printf to LCD, scanf to Keypad
+ * 
+ * Usage:
+ *   SerialStdioInit(9600);  // For serial-based labs (printf/scanf to UART)
+ *   StdioInit();            // For LCD/Keypad labs (printf to LCD, scanf to Keypad)
+ */
+
+#ifndef SerialStdioDriver_H
+#define SerialStdioDriver_H
+
+#include <Arduino.h>
+
+/**
+ * @brief Initialize STDIO redirection to Serial port (UART)
+ * 
+ * Sets up UART at specified baud rate and redirects stdout/stdin to serial port.
+ * This allows printf() to output to the serial monitor and scanf() to read from it.
+ * 
+ * @param baudRate Baud rate (typically 9600)
+ */
+void SerialStdioInit(unsigned long baudRate);
+
+/**
+ * @brief Initialize STDIO redirection to LCD and Keypad
+ * 
+ * Redirects stdout (printf) to LCD display and stdin (scanf) to Keypad input.
+ * This allows printf() to output to the LCD and scanf() to read from the keypad.
+ * 
+ * Note: Must call lcd.Init() and keypad.Init() before calling this function.
+ */
+void StdioInit();
+
+#endif
+
+	MeasurementTask.h
+/**
+ * @file MeasurementTask.h
+ * @brief Pure-C header for button measurement FreeRTOS task
+ */
+
+#ifndef MEASUREMENT_TASK_H
+#define MEASUREMENT_TASK_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void TaskMeasurement(void *pv);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* MEASUREMENT_TASK_H */
+
+	MeasurementTask.c
+/**
+ * @file MeasurementTask.c
+ * @brief Pure-C FreeRTOS task – polls button, debounces, signals press events
+ */
+
+#include "MeasurementTask.h"
+#include "Lab2_2_Shared.h"
+#include "avr_helpers.h"
+
+#include <stdio.h>
+#include <Arduino_FreeRTOS.h>
+#include <task.h>
+#include <queue.h>
+
+void TaskMeasurement(void *pv)
+{
+    (void)pv;
+
+    uint8_t  stablePressed = 0;
+    uint8_t  matchCount    = 0;
+    unsigned long pressStartMs = 0;
+    unsigned long eventIndex = 0;
+
+    for (;;)
+    {
+        uint8_t rawVal     = hw_digital_read(BTN_PIN);
+        uint8_t rawPressed = (rawVal == PIN_LOW) ? 1 : 0;  /* active-low */
+
+        /* ── Debounce state machine ─────────────────────────────── */
+        if (rawPressed != stablePressed)
+        {
+            matchCount++;
+            if (matchCount >= DEBOUNCE_SAMPLES)
+            {
+                matchCount    = 0;
+                stablePressed = rawPressed;
+
+                if (stablePressed)
+                {
+                    /* Button just pressed */
+                    pressStartMs = hw_millis();
+                }
+                else
+                {
+                    /* Button just released */
+                    unsigned long dur = hw_millis() - pressStartMs;
+                    uint8_t isS = (dur < SHORT_THRESHOLD_MS) ? 1 : 0;
+                    eventIndex++;
+
+                    /* Update statistics immediately when event is detected */
+                    if (xSemaphoreTake(g_shared.statsMutex,
+                                      portMAX_DELAY) == pdTRUE)
+                    {
+                        g_shared.stats.totalPresses++;
+                        g_shared.stats.totalDurationMs += (uint32_t)dur;
+
+                        if (isS)
+                        {
+                            g_shared.stats.shortPresses++;
+                            g_shared.stats.shortDurationMs += (uint32_t)dur;
+                        }
+                        else
+                        {
+                            g_shared.stats.longPresses++;
+                            g_shared.stats.longDurationMs += (uint32_t)dur;
+                        }
+
+                        xSemaphoreGive(g_shared.statsMutex);
+                    }
+
+                    /* Queue one full event so bursts are not lost */
+                    {
+                        PressEventData eventData;
+                        eventData.durationMs = (uint32_t)dur;
+                        eventData.isShort    = isS;
+
+                        if (xQueueSend(g_shared.pressEventQueue, &eventData, 0) != pdPASS)
+                        {
+                            printf("[WARN] LED event queue full\r\n");
+                        }
+                    }
+
+                    if (xSemaphoreTake(g_shared.ioMutex, portMAX_DELAY) == pdTRUE)
+                    {
+                        printf(
+                            "+---------------- Button Event ----------------+\r\n"
+                            "| Event ID : %-31lu |\r\n"
+                            "| Type     : %-31s |\r\n"
+                            "| Duration : %-27lu ms |\r\n"
+                            "+----------------------------------------------+\r\n\r\n",
+                            eventIndex,
+                            isS ? "SHORT" : "LONG",
+                            (unsigned long)dur
+                        );
+                        xSemaphoreGive(g_shared.ioMutex);
+                    }
+                }
+            }
+        }
+        else
+        {
+            matchCount = 0;
+        }
+
+        vTaskDelay(1);  /* yield for 1 tick */
+    }
+}
+
+ReportingtTask.c
+/**
+ * @file ReportingTask.c
+ * @brief Pure-C FreeRTOS task – periodic serial statistics report
+ */
+
+#include "ReportingTask.h"
+#include "Lab2_2_Shared.h"
+#include "avr_helpers.h"
+
+#include <stdio.h>
+#include <Arduino_FreeRTOS.h>
+#include <task.h>
+#include <semphr.h>
+
+void TaskReporting(void *pv)
+{
+    (void)pv;
+    if (xSemaphoreTake(g_shared.ioMutex, portMAX_DELAY) == pdTRUE)
+    {
+        printf("[Report] === Task started ===\r\n");
+        xSemaphoreGive(g_shared.ioMutex);
+    }
+
+    TickType_t lastWake = xTaskGetTickCount();
+
+    for (;;)
+    {
+        uint16_t tp = 0, sp = 0, lp = 0;
+        uint32_t td = 0;
+
+        if (xSemaphoreTake(g_shared.statsMutex, portMAX_DELAY) == pdTRUE)
+        {
+            tp = g_shared.stats.totalPresses;
+            sp = g_shared.stats.shortPresses;
+            lp = g_shared.stats.longPresses;
+            td = g_shared.stats.totalDurationMs;
+
+            /* Reset for next reporting window */
+            g_shared.stats.totalPresses    = 0;
+            g_shared.stats.shortPresses    = 0;
+            g_shared.stats.longPresses     = 0;
+            g_shared.stats.totalDurationMs = 0;
+            g_shared.stats.shortDurationMs = 0;
+            g_shared.stats.longDurationMs  = 0;
+            xSemaphoreGive(g_shared.statsMutex);
+        }
+
+        {
+            uint32_t avg = (tp > 0) ? (td / tp) : 0;
+
+            if (xSemaphoreTake(g_shared.ioMutex, portMAX_DELAY) == pdTRUE)
+            {
+                printf(
+                    "+------------------------------------------+\r\n"
+                    "|            Button Statistics             |\r\n"
+                    "+------------------------------------------+\r\n"
+                    "| Total presses         : %-12u |\r\n"
+                    "| Short presses         : %-12u |\r\n"
+                    "| Long presses          : %-12u |\r\n"
+                    "| Average duration (ms) : %-12lu |\r\n"
+                    "+------------------------------------------+\r\n\r\n",
+                    tp,
+                    sp,
+                    lp,
+                    (unsigned long)avg
+                );
+                xSemaphoreGive(g_shared.ioMutex);
+            }
+        }
+
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(10000));
+    }
+}
+
+ReportingTask.h
+/**
+ * @file ReportingTask.h
+ * @brief Pure-C header for periodic reporting FreeRTOS task
+ */
+
+#ifndef REPORTING_TASK_H
+#define REPORTING_TASK_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void TaskReporting(void *pv);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* REPORTING_TASK_H */
+
+StatisticsTask.c
+/**
+ * @file StatisticsTask.c
+ * @brief Pure-C FreeRTOS task – updates stats, drives indicator LEDs
+ */
+
+#include "StatisticsTask.h"
+#include "Lab2_2_Shared.h"
+#include "avr_helpers.h"
+
+#include <stdio.h>
+#include <Arduino_FreeRTOS.h>
+#include <task.h>
+#include <semphr.h>
+#include <queue.h>
+
+void TaskStatistics(void *pv)
+{
+    (void)pv;
+    if (xSemaphoreTake(g_shared.ioMutex, portMAX_DELAY) == pdTRUE)
+    {
+        printf("[Stats] === Task started ===\n");
+        xSemaphoreGive(g_shared.ioMutex);
+    }
+
+    for (;;)
+    {
+        PressEventData eventData;
+
+        /* Block until a full press event is available */
+        if (xQueueReceive(g_shared.pressEventQueue,
+                          &eventData,
+                          portMAX_DELAY) == pdTRUE)
+        {
+            uint8_t  isS = eventData.isShort;
+
+            uint8_t blinks = 0;
+
+            if (isS)
+                blinks = 5;
+            else
+                blinks = 10;
+
+            /* LED feedback: green = short, red = long */
+            if (isS)
+            {
+                hw_digital_write(LED_GREEN_PIN, PIN_HIGH);
+                hw_digital_write(LED_RED_PIN,   PIN_LOW);
+            }
+            else
+            {
+                hw_digital_write(LED_RED_PIN,   PIN_HIGH);
+                hw_digital_write(LED_GREEN_PIN, PIN_LOW);
+            }
+
+            /* Yellow blink feedback: each blink = 250 ms on + 250 ms off */
+            {
+                uint8_t i;
+                for (i = 0; i < blinks; i++)
+                {
+                    hw_digital_write(LED_YELLOW_PIN, PIN_HIGH);
+                    vTaskDelay(pdMS_TO_TICKS(100));
+                    hw_digital_write(LED_YELLOW_PIN, PIN_LOW);
+                    vTaskDelay(pdMS_TO_TICKS(100));
+                }
+            }
+
+            /* All LEDs off after feedback sequence */
+            hw_digital_write(LED_GREEN_PIN,  PIN_LOW);
+            hw_digital_write(LED_RED_PIN,    PIN_LOW);
+            hw_digital_write(LED_YELLOW_PIN, PIN_LOW);
+
+            if (xSemaphoreTake(g_shared.ioMutex, portMAX_DELAY) == pdTRUE)
+            {
+                printf("[Stats] Event processed: %s, queue pending=%u\r\n",
+                       isS ? "SHORT" : "LONG",
+                      (unsigned)uxQueueMessagesWaiting(g_shared.pressEventQueue));
+                xSemaphoreGive(g_shared.ioMutex);
+            }
+        }
+    }
+}
+
+StatisticsTask.h
+/**
+ * @file StatisticsTask.h
+ * @brief Pure-C header for statistics & LED feedback FreeRTOS task
+ */
+
+#ifndef STATISTICS_TASK_H
+#define STATISTICS_TASK_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void TaskStatistics(void *pv);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* STATISTICS_TASK_H */
+
 
