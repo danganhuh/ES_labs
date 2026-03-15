@@ -7,7 +7,9 @@
 #include <semphr.h>
 
 #define LAB3_NTC_PIN             A0
+#define LAB3_DHT_PIN             7
 #define LAB3_ALERT_LED_PIN       13
+#define LAB3_BLUE_LED_PIN        12
 
 #define LAB3_LCD_I2C_ADDR        0x27
 
@@ -25,17 +27,28 @@
 #define LAB3_CONDITION_TASK_MS      50u
 #define LAB3_ALERT_TASK_MS          50u
 #define LAB3_LCD_TASK_MS            500u
+#define LAB3_DHT_SAMPLE_UNITS       5u
+#define LAB3_SOURCE_SWITCH_MS       20000u
 
 #define LAB3_MIN_SAMPLE_MS          20u
 #define LAB3_MAX_SAMPLE_MS          100u
 #define LAB3_MIN_REPORT_MS          200u
 #define LAB3_MAX_REPORT_MS          2000u
 
+typedef enum
+{
+    LAB3_SENSOR_SOURCE_NTC = 0,
+    LAB3_SENSOR_SOURCE_DHT = 1
+} Lab3SensorSource;
+
 typedef struct
 {
     uint16_t adcRaw;
     float voltage;
     float tempC;
+    float humidityPct;
+    bool valid;
+    Lab3SensorSource source;
     TickType_t timestamp;
 } Lab3RawSample;
 
@@ -55,6 +68,13 @@ typedef struct
     uint16_t rawAdc;
     float rawVoltage;
     float rawTempC;
+    float rawHumidityPct;
+    float dhtTempC;
+    float dhtHumidityPct;
+    bool dhtDataValid;
+    bool sensorDataValid;
+    Lab3SensorSource requestedSource;
+    Lab3SensorSource activeSource;
     float clampedTempC;
     float filteredTempC;
     bool hysteresisCandidate;

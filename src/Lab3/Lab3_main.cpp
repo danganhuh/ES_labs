@@ -3,6 +3,7 @@
 #include "SignalConditioning.h"
 #include "AlertManager.h"
 #include "../sensor/NtcAdcDriver.h"
+#include "../sensor/DhtSensorDriver.h"
 
 #include <Arduino.h>
 #include <stdio.h>
@@ -18,12 +19,15 @@
 Lab3Shared g_lab3;
 
 static NtcAdcDriver      s_ntc(LAB3_NTC_PIN);
+static DhtSensorDriver   s_dht(LAB3_DHT_PIN);
 static SignalConditioner s_conditioner;
 static AlertManager      s_alert(LAB3_ALERT_LED_PIN);
+static AlertManager      s_blueAlert(LAB3_BLUE_LED_PIN);
 static LiquidCrystal_I2C s_lcd(LAB3_LCD_I2C_ADDR, 16, 2);
 static FILE s_lcdStream;
 static uint8_t s_lcdCol = 0u;
 static uint8_t s_lcdRow = 0u;
+static ConditioningConfig s_ccfg;
 
 static void taskAcquisition(void *pv);
 static void taskConditioning(void *pv);
@@ -32,6 +36,12 @@ static void taskDisplay(void *pv);
 static void taskLcdDisplay(void *pv);
 
 static const TickType_t MUTEX_TIMEOUT_TICKS = pdMS_TO_TICKS(20);
+static const TickType_t DHT_MIN_REFRESH_TICKS = pdMS_TO_TICKS(2000);
+
+static const char* sensorSourceName(Lab3SensorSource src)
+{
+    return (src == LAB3_SENSOR_SOURCE_DHT) ? "DHT" : "NTC";
+}
 
 static int lcd_putchar(char c, FILE *stream)
 {
@@ -183,28 +193,29 @@ void lab3_setup()
     readConfigFromStdio(&g_lab3.config);
 
     s_ntc.Init();
+    s_dht.Init();
     s_alert.Init();
+    s_blueAlert.Init();
     Wire.begin();
     s_lcd.init();
     s_lcd.backlight();
     fdev_setup_stream(&s_lcdStream, lcd_putchar, NULL, _FDEV_SETUP_WRITE);
     lcd_printf_lines("Lab3 Starting", "Please wait...");
 
-    ConditioningConfig ccfg;
-    ccfg.thresholdC = g_lab3.config.thresholdC;
-    ccfg.hysteresisC = g_lab3.config.hysteresisC;
-    ccfg.alpha = g_lab3.config.alpha;
-    ccfg.minTempC = -40.0f;
-    ccfg.maxTempC = 125.0f;
+    s_ccfg.thresholdC = g_lab3.config.thresholdC;
+    s_ccfg.hysteresisC = g_lab3.config.hysteresisC;
+    s_ccfg.alpha = g_lab3.config.alpha;
+    s_ccfg.minTempC = -40.0f;
+    s_ccfg.maxTempC = 125.0f;
 
     uint16_t persistenceSamples = g_lab3.config.persistenceMs / g_lab3.config.sampleMs;
     if (persistenceSamples == 0u)
     {
         persistenceSamples = 1u;
     }
-    ccfg.persistenceSamples = persistenceSamples;
+    s_ccfg.persistenceSamples = persistenceSamples;
 
-    s_conditioner.Configure(ccfg);
+    s_conditioner.Configure(s_ccfg);
 
     g_lab3.rawQueue = xQueueCreate(1, sizeof(Lab3RawSample));
     g_lab3.alertSignal = xSemaphoreCreateBinary();
@@ -221,6 +232,12 @@ void lab3_setup()
     g_lab3.state.alertTransitions = 0;
     g_lab3.state.persistenceSamples = persistenceSamples;
     g_lab3.state.alertLedState = false;
+    g_lab3.state.dhtTempC = 0.0f;
+    g_lab3.state.dhtHumidityPct = 0.0f;
+    g_lab3.state.dhtDataValid = false;
+    g_lab3.state.sensorDataValid = false;
+    g_lab3.state.requestedSource = LAB3_SENSOR_SOURCE_NTC;
+    g_lab3.state.activeSource = LAB3_SENSOR_SOURCE_NTC;
 
     if (xSemaphoreTake(g_lab3.ioMutex, portMAX_DELAY) == pdTRUE)
     {
@@ -234,11 +251,12 @@ void lab3_setup()
                persistenceSamples,
                g_lab3.config.reportMs,
              fmtFloat(g_lab3.config.alpha, 0, 2, alphaBuf));
+                printf("[Lab3] LCD mode: row1=NTC, row2=DHT22\n");
         xSemaphoreGive(g_lab3.ioMutex);
     }
 
     BaseType_t ok;
-    ok = xTaskCreate(taskAcquisition, "L3_Acq", 256, (void*)0, 3, (TaskHandle_t*)0);
+    ok = xTaskCreate(taskAcquisition, "L3_Acq", 512, (void*)0, 3, (TaskHandle_t*)0);
     if (ok != pdPASS) { printf("[Lab3] FAIL: taskAcquisition\\n"); for(;;){} }
 
     ok = xTaskCreate(taskConditioning, "L3_Cond", 320, (void*)0, 2, (TaskHandle_t*)0);
@@ -252,6 +270,8 @@ void lab3_setup()
 
     ok = xTaskCreate(taskLcdDisplay, "L3_LCD", 512, (void*)0, 1, (TaskHandle_t*)0);
     if (ok != pdPASS) { printf("[Lab3] FAIL: taskLcdDisplay\\n"); for(;;){} }
+
+    // Source auto-switch is disabled in dual-row LCD mode.
 }
 
 void lab3_loop()
@@ -266,9 +286,13 @@ static void taskAcquisition(void *pv)
     for (;;)
     {
         Lab3RawSample sample;
+        sample.source = LAB3_SENSOR_SOURCE_NTC;
+        sample.humidityPct = 0.0f;
+        sample.valid = true;
         sample.adcRaw = s_ntc.ReadRaw();
         sample.voltage = s_ntc.RawToVoltage(sample.adcRaw);
         sample.tempC = s_ntc.RawToTemperatureC(sample.adcRaw);
+
         sample.timestamp = xTaskGetTickCount();
 
         xQueueOverwrite(g_lab3.rawQueue, &sample);
@@ -280,13 +304,18 @@ static void taskConditioning(void *pv)
 {
     (void)pv;
     TickType_t lastWake = xTaskGetTickCount();
+    Lab3SensorSource lastSource = LAB3_SENSOR_SOURCE_NTC;
 
     for (;;)
     {
         Lab3RawSample sample;
         if (xQueueReceive(g_lab3.rawQueue, &sample, 0) == pdTRUE)
         {
-            ConditioningResult c = s_conditioner.Process(sample.tempC);
+            if (sample.source != lastSource)
+            {
+                s_conditioner.Configure(s_ccfg);
+                lastSource = sample.source;
+            }
 
             if (xSemaphoreTake(g_lab3.stateMutex, MUTEX_TIMEOUT_TICKS) == pdTRUE)
             {
@@ -294,16 +323,27 @@ static void taskConditioning(void *pv)
                 g_lab3.state.rawAdc = sample.adcRaw;
                 g_lab3.state.rawVoltage = sample.voltage;
                 g_lab3.state.rawTempC = sample.tempC;
-                g_lab3.state.clampedTempC = c.clampedTempC;
-                g_lab3.state.filteredTempC = c.filteredTempC;
-                g_lab3.state.hysteresisCandidate = c.hysteresisCandidate;
-                g_lab3.state.debouncedAlert = c.debouncedAlert;
-                g_lab3.state.persistenceCounter = c.pendingCount;
+                g_lab3.state.rawHumidityPct = sample.humidityPct;
+                g_lab3.state.sensorDataValid = sample.valid;
+                g_lab3.state.activeSource = sample.source;
                 g_lab3.state.timestamp = sample.timestamp;
+
+                if (sample.valid)
+                {
+                    ConditioningResult c = s_conditioner.Process(sample.tempC);
+                    g_lab3.state.clampedTempC = c.clampedTempC;
+                    g_lab3.state.filteredTempC = c.filteredTempC;
+                    g_lab3.state.hysteresisCandidate = c.hysteresisCandidate;
+                    g_lab3.state.debouncedAlert = c.debouncedAlert;
+                    g_lab3.state.persistenceCounter = c.pendingCount;
+                }
                 xSemaphoreGive(g_lab3.stateMutex);
             }
 
-            xSemaphoreGive(g_lab3.alertSignal);
+            if (sample.valid)
+            {
+                xSemaphoreGive(g_lab3.alertSignal);
+            }
         }
 
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(LAB3_CONDITION_TASK_MS));
@@ -314,56 +354,96 @@ static void taskAlerting(void *pv)
 {
     (void)pv;
     TickType_t lastWake = xTaskGetTickCount();
+    static TickType_t redLastBlinkTick = 0;
+    static bool redBlinkState = false;
+    static TickType_t blueLastBlinkTick = 0;
+    static bool blueBlinkState = false;
 
     for (;;)
     {
-        if (xSemaphoreTake(g_lab3.alertSignal, 0) == pdTRUE)
+        float ntcTemp = 0.0f;
+        bool ntcValid = false;
+        float dhtTemp = 0.0f;
+        bool dhtValid = false;
+
+        if (xSemaphoreTake(g_lab3.stateMutex, MUTEX_TIMEOUT_TICKS) == pdTRUE)
         {
-            float filteredTemp = 0.0f;
+            ntcTemp = g_lab3.state.filteredTempC;
+            ntcValid = g_lab3.state.sensorDataValid;
+            dhtTemp = g_lab3.state.dhtTempC;
+            dhtValid = g_lab3.state.dhtDataValid;
+            xSemaphoreGive(g_lab3.stateMutex);
+        }
 
-            if (xSemaphoreTake(g_lab3.stateMutex, MUTEX_TIMEOUT_TICKS) == pdTRUE)
-            {
-                filteredTemp = g_lab3.state.filteredTempC;
-                xSemaphoreGive(g_lab3.stateMutex);
-            }
+        bool desiredRedLedState = false;
 
-            static TickType_t lastBlinkTick = 0;
-            static bool blinkState = false;
-            bool desiredLedState = false;
+        if (!ntcValid)
+        {
+            redBlinkState = false;
+            desiredRedLedState = false;
+        }
+        else if (ntcTemp >= LAB3_LED_BLINK_C)
+        {
+            TickType_t now = xTaskGetTickCount();
+            if ((now - redLastBlinkTick) >= pdMS_TO_TICKS(LAB3_LED_BLINK_MS))
+            {
+                redBlinkState = !redBlinkState;
+                redLastBlinkTick = now;
+            }
+            desiredRedLedState = redBlinkState;
+        }
+        else if (ntcTemp >= LAB3_LED_ON_C)
+        {
+            redBlinkState = true;
+            desiredRedLedState = true;
+        }
+        else
+        {
+            redBlinkState = false;
+            desiredRedLedState = false;
+        }
 
-            if (filteredTemp >= LAB3_LED_BLINK_C)
-            {
-                TickType_t now = xTaskGetTickCount();
-                if ((now - lastBlinkTick) >= pdMS_TO_TICKS(LAB3_LED_BLINK_MS))
-                {
-                    blinkState = !blinkState;
-                    lastBlinkTick = now;
-                }
-                desiredLedState = blinkState;
-            }
-            else if (filteredTemp >= LAB3_LED_ON_C)
-            {
-                blinkState = true;
-                desiredLedState = true;
-            }
-            else
-            {
-                blinkState = false;
-                desiredLedState = false;
-            }
+        s_alert.ApplyState(desiredRedLedState);
 
-            const bool prevLedState = s_alert.IsActive();
-            s_alert.ApplyState(desiredLedState);
+        bool desiredLedState = false;
 
-            if (xSemaphoreTake(g_lab3.stateMutex, MUTEX_TIMEOUT_TICKS) == pdTRUE)
+        if (!dhtValid)
+        {
+            blueBlinkState = false;
+            desiredLedState = false;
+        }
+        else if (dhtTemp >= LAB3_LED_BLINK_C)
+        {
+            TickType_t now = xTaskGetTickCount();
+            if ((now - blueLastBlinkTick) >= pdMS_TO_TICKS(LAB3_LED_BLINK_MS))
             {
-                g_lab3.state.alertLedState = s_alert.IsActive();
-                if (prevLedState != g_lab3.state.alertLedState)
-                {
-                    g_lab3.state.alertTransitions++;
-                }
-                xSemaphoreGive(g_lab3.stateMutex);
+                blueBlinkState = !blueBlinkState;
+                blueLastBlinkTick = now;
             }
+            desiredLedState = blueBlinkState;
+        }
+        else if (dhtTemp >= LAB3_LED_ON_C)
+        {
+            blueBlinkState = true;
+            desiredLedState = true;
+        }
+        else
+        {
+            blueBlinkState = false;
+            desiredLedState = false;
+        }
+
+        const bool prevLedState = s_blueAlert.IsActive();
+        s_blueAlert.ApplyState(desiredLedState);
+
+        if (xSemaphoreTake(g_lab3.stateMutex, MUTEX_TIMEOUT_TICKS) == pdTRUE)
+        {
+            g_lab3.state.alertLedState = s_blueAlert.IsActive();
+            if (prevLedState != g_lab3.state.alertLedState)
+            {
+                g_lab3.state.alertTransitions++;
+            }
+            xSemaphoreGive(g_lab3.stateMutex);
         }
 
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(LAB3_ALERT_TASK_MS));
@@ -393,16 +473,21 @@ static void taskDisplay(void *pv)
         if (xSemaphoreTake(g_lab3.ioMutex, MUTEX_TIMEOUT_TICKS) == pdTRUE)
         {
                char plotRawBuf[16], plotFiltBuf[16], plotHighBuf[16], plotLowBuf[16], plotAdcBuf[16];
-               char filtViewBuf[16], rawViewBuf[16], clampViewBuf[16];
-               const char* ledMode = (snap.filteredTempC >= LAB3_LED_BLINK_C) ? "BLINK" : ((snap.filteredTempC >= LAB3_LED_ON_C) ? "ON" : "OFF");
+               char filtViewBuf[16], rawViewBuf[16], clampViewBuf[16], humViewBuf[16];
+             const char* ledMode = (!snap.dhtDataValid) ? "OFF" : ((snap.dhtTempC >= LAB3_LED_BLINK_C) ? "BLINK" : ((snap.dhtTempC >= LAB3_LED_ON_C) ? "ON" : "OFF"));
                const char* stateName = snap.debouncedAlert ? "ALERT" : "NORMAL";
+               const char* srcName = sensorSourceName(snap.activeSource);
+               const char* validName = snap.sensorDataValid ? "OK" : "WAIT";
 
              const float highThreshold = g_lab3.config.thresholdC + g_lab3.config.hysteresisC;
              const float lowThreshold = g_lab3.config.thresholdC - g_lab3.config.hysteresisC;
 
-                 printf("[L3] i=%lu raw=%sC clamp=%sC filt=%sC st=%s mode=%s led=%u p=%u/%u tr=%lu\r\n",
+                  printf("[L3] i=%lu src=%s v=%s raw=%sC hum=%s%% clamp=%sC filt=%sC st=%s mode=%s led=%u p=%u/%u tr=%lu\r\n",
                       (unsigned long)snap.sampleIndex,
+                      srcName,
+                      validName,
                       fmtFloat(snap.rawTempC, 0, 2, rawViewBuf),
+                      fmtFloat(snap.rawHumidityPct, 0, 1, humViewBuf),
                       fmtFloat(snap.clampedTempC, 0, 2, clampViewBuf),
                       fmtFloat(snap.filteredTempC, 0, 2, filtViewBuf),
                       stateName,
@@ -412,12 +497,13 @@ static void taskDisplay(void *pv)
                       snap.persistenceSamples,
                       (unsigned long)snap.alertTransitions);
 
-                         printf("PLOT,%s,%s,%s,%s,%s,%u\n",
+                         printf("PLOT,%s,%s,%s,%s,%s,%s,%u\n",
                  fmtFloat(snap.rawTempC, 0, 3, plotRawBuf),
                  fmtFloat(snap.filteredTempC, 0, 3, plotFiltBuf),
                  fmtFloat(highThreshold, 0, 3, plotHighBuf),
                  fmtFloat(lowThreshold, 0, 3, plotLowBuf),
                  fmtFloat((float)snap.rawAdc, 0, 3, plotAdcBuf),
+                     fmtFloat(snap.rawHumidityPct, 0, 3, humViewBuf),
                                  snap.alertLedState ? 1u : 0u);
 
             xSemaphoreGive(g_lab3.ioMutex);
@@ -431,9 +517,38 @@ static void taskLcdDisplay(void *pv)
 {
     (void)pv;
     TickType_t lastWake = xTaskGetTickCount();
+    TickType_t lastDhtReadTick = 0;
+    float dhtTempC = 0.0f;
+    float dhtHumidity = 0.0f;
+    bool dhtValid = false;
 
     for (;;)
     {
+        const TickType_t nowTick = xTaskGetTickCount();
+        if ((nowTick - lastDhtReadTick) >= DHT_MIN_REFRESH_TICKS)
+        {
+            float t = 0.0f;
+            float h = 0.0f;
+            dhtValid = s_dht.Read(&t, &h);
+            if (dhtValid)
+            {
+                dhtTempC = t;
+                dhtHumidity = h;
+            }
+            lastDhtReadTick = nowTick;
+
+            if (xSemaphoreTake(g_lab3.stateMutex, MUTEX_TIMEOUT_TICKS) == pdTRUE)
+            {
+                g_lab3.state.dhtDataValid = dhtValid;
+                if (dhtValid)
+                {
+                    g_lab3.state.dhtTempC = dhtTempC;
+                    g_lab3.state.dhtHumidityPct = dhtHumidity;
+                }
+                xSemaphoreGive(g_lab3.stateMutex);
+            }
+        }
+
         Lab3RuntimeState snap;
         if (xSemaphoreTake(g_lab3.stateMutex, MUTEX_TIMEOUT_TICKS) == pdTRUE)
         {
@@ -449,29 +564,29 @@ static void taskLcdDisplay(void *pv)
         {
             char line1[17] = {0};
             char line2[17] = {0};
-            char tfBuf[8] = {0};
+            char ntcBuf[8] = {0};
+            char dhtTBuf[8] = {0};
+            char dhtHBuf[8] = {0};
             const char* mode = "OFF";
-            if (snap.filteredTempC >= LAB3_LED_BLINK_C)
+
+            if (snap.dhtDataValid && snap.dhtTempC >= LAB3_LED_BLINK_C)
             {
                 mode = "BLINK";
             }
-            else if (snap.filteredTempC >= LAB3_LED_ON_C)
+            else if (snap.dhtDataValid && snap.dhtTempC >= LAB3_LED_ON_C)
             {
                 mode = "ON";
             }
 
-            snprintf(line1, sizeof(line1), "LED:%s T:%s", mode, fmtFloat(snap.filteredTempC, 0, 1, tfBuf));
-            if (snap.filteredTempC >= LAB3_LED_BLINK_C)
+            snprintf(line1, sizeof(line1), "NTC %s T:%s", mode, fmtFloat(snap.filteredTempC, 0, 1, ntcBuf));
+
+            if (dhtValid)
             {
-                snprintf(line2, sizeof(line2), "Blink > 30.0C");
-            }
-            else if (snap.filteredTempC >= LAB3_LED_ON_C)
-            {
-                snprintf(line2, sizeof(line2), "On >= 20.0C");
+                snprintf(line2, sizeof(line2), "DHT T:%s H:%s", fmtFloat(dhtTempC, 0, 1, dhtTBuf), fmtFloat(dhtHumidity, 0, 0, dhtHBuf));
             }
             else
             {
-                snprintf(line2, sizeof(line2), "Below 20.0C");
+                snprintf(line2, sizeof(line2), "DHT WAITING...");
             }
 
             lcd_printf_lines(line1, line2);
@@ -480,3 +595,4 @@ static void taskLcdDisplay(void *pv)
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(LAB3_LCD_TASK_MS));
     }
 }
+
