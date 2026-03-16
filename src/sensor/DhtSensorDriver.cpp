@@ -31,15 +31,10 @@ bool DhtSensorDriver::Read(float* outTempC, float* outHumidityPct)
     // Retry a few times because DHT timing may occasionally fail in RTOS context.
     for (uint8_t attempt = 0; attempt < 3u; ++attempt)
     {
-        float h = dht.readHumidity(false);
-        float t = dht.readTemperature(false, false);
-
-        // If cached/non-forced read fails, trigger one fresh bus transaction.
-        if (isnan(t) || isnan(h))
-        {
-            h = dht.readHumidity(true);
-            t = dht.readTemperature(false, true);
-        }
+        // Force a fresh bus read so value changes propagate quickly
+        // (cached reads can lag by ~2s+ depending on library timing).
+        float h = dht.readHumidity(true);
+        float t = dht.readTemperature(false, true);
 
         if (!isnan(t) && !isnan(h)
             && t >= -40.0f && t <= 85.0f

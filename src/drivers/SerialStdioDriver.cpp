@@ -14,13 +14,7 @@
  */
 
 #include "SerialStdioDriver.h"
-#include "../lcd/LcdDriver.h"
-#include "../keypad/KeypadDriver.h"
 #include <stdio.h>
-
-// Forward declarations of global driver instances
-extern LcdDriver* g_lcdDriver;
-extern KeypadDriver* g_keypadDriver;
 
 // ============================================================================
 // SERIAL-BASED I/O FUNCTIONS (for serial communication)
@@ -100,73 +94,14 @@ void SerialReadLine(char* buf, int maxLen)
     buf[index] = '\0';
 }
 
-// ============================================================================
-// LCD/KEYPAD-BASED STDIO FUNCTIONS (for LCD/Keypad I/O)
-// ============================================================================
-
-/**
- * @brief Callback function for printf redirection to LCD
- * 
- * This function is called by printf() to output each character.
- * It uses the LcdDriver to display output on the LCD.
- * 
- * @param c Character to write
- * @param stream FILE stream (unused)
- * @return 0 on success
- */
-static int LcdPutChar(char c, FILE *stream)
-{
-    if (g_lcdDriver) {
-        g_lcdDriver->PutChar(c);
-    }
-    return 0;
-}
-
-/**
- * @brief Callback function for scanf redirection from Keypad
- * 
- * This function is called by scanf() to read each character.
- * It uses the KeypadDriver to get input from the keypad.
- * Blocks until a key is available on the keypad.
- * 
- * @param stream FILE stream (unused)
- * @return Character read from keypad
- */
-static int KeypadGetChar(FILE *stream)
-{
-    // Block until key available on keypad
-    if (g_keypadDriver) {
-        int c = g_keypadDriver->GetChar();
-        // Treat '#' as newline so scanf() sees end-of-input when user confirms
-        if (c == '#') return '\n';
-        return c;
-    }
-    return 0;
-}
-
-// Static FILE structures for LCD/Keypad redirection
-static FILE LcdStdOut;
-static FILE KeypadStdIn;
-
 /**
  * @brief Initialize STDIO redirection to LCD and Keypad
  * 
- * Sets up:
- * - Redirects stdout to LCD display for printf() support
- * - Redirects stdin to Keypad for scanf() support
- * 
- * Prerequisites:
- * - g_lcdDriver must be initialized (lcd.Init() called)
- * - g_keypadDriver must be initialized (keypad.Init() called)
+ * In this build profile, serial stdio is used; LCD/Keypad redirection
+ * is intentionally not enabled to avoid optional hardware dependencies.
  */
 void StdioInit()
 {
-    // Redirect stdout (printf) to LCD display
-    fdev_setup_stream(&LcdStdOut, LcdPutChar, NULL, _FDEV_SETUP_WRITE);
-    stdout = &LcdStdOut;         // All printf() calls now go to LCD
-
-    // Redirect stdin (scanf) to Keypad input
-    fdev_setup_stream(&KeypadStdIn, NULL, KeypadGetChar, _FDEV_SETUP_READ);
-    stdin = &KeypadStdIn;        // All scanf() calls now read from keypad
+    // No-op for Lab3 serial-stdio mode.
 }
 

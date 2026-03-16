@@ -10,9 +10,9 @@ Department of Software Engineering and Automation
 
 
 REPORT
-Laboratory work no. 2.1
+Laboratory work no. 3.2
 for the course "Embedded Systems"
-Topic: Multitasking with Operating Systems
+Topic: Temperature Sensor Signal Acquisition. Analog Signal Acquisition
 
 
 
@@ -28,150 +28,131 @@ Topic: Multitasking with Operating Systems
 Chișinău 2026
 1.	Domain Analysis
 a.	Purpose of the laboratory work
-Familiarization with the fundamental concepts of operating systems for embedded electronic systems, as well as their implementation and use in developing applications for microcontrollers (MCU). The laboratory work aims to create an application that runs sequentially or concurrently multiple tasks, using either bare-metal programming or a real-time operating system (RTOS,e.g., FreeRTOS). The application must demonstrate the methodology of scheduling, synchronization (provider/consumer model), and execution (preemptive or non-preemptive) of tasks, with clear documentation of the software architecture and data flow between tasks.
+The purpose of this laboratory work is to implement a FreeRTOS-based embedded monitoring system that acquires, conditions, and reports data from three sensors (NTC, DHT22, ultrasonic), while driving local alerts on LEDs and LCD and providing structured serial diagnostics [1].
 b.	Objectives of the laboratory work
--	Familiarize with scheduling and execution principles for tasks in an embedded system, both in sequential (bare-metal) and concurrent (RTOS/FreeRTOS) modes.
--	Understand and apply recurrence and offsets for processor utilization optimization.
--	Implement synchronization and communication mechanisms between tasks, including the provider/consumer model and buffer usage.
--	Analyze the advantages and limitations of sequential versus preemptive multitasking execution. 
--	Document the software architecture, present block diagrams and electrical schematics as part of the design methodology.
-
+-	Implement periodic acquisition for analog and digital sensors.
+-	Apply a complete preprocessing chain for measured signals.
+-	Separate acquisition, conditioning, alerting, and reporting into dedicated modules/tasks.
+-	Display alerts and state information on LCD and serial STDIO.
+-	Validate threshold policies and timing behavior for all sensors.
 c.	Problem definition
-Design and implement a microcontroller-based smart lock system that provides a menu-driven interface for lock control, password management, and status reporting through a keypad input, LCD display, and LED feedback indicators.
+Design and implement a FreeRTOS-based temperature monitoring application for an Arduino Mega using both NTC, DHT11 sensors,  [2]. The application must periodically read raw ADC samples from NTC, acquire DHT22 temperature/humidity, convert and condition values, detect over-threshold conditions with hysteresis and persistence anti-bounce, and expose internal states to the user.
 Functional specifications:
-FR-1.0: Command Interface
-FR-1.1: System shall accept '*' key to enter menu mode
-FR-1.2: System shall display menu options upon '' press: "0:Lock *1:Unlock *2:ChgPass *3:Stat"
-FR-1.3: System shall accept '#' key to execute selected command
-FR-2.0: Lock/Unlock Operations
-FR-2.1: Command  shall unconditionally change lock state to LOCKED
-FR-2.2: Command  shall request password input before unlocking
-FR-2.3: System shall compare entered password with stored password (case-sensitive)
-FR-2.4: Correct password shall change state to UNLOCKED; incorrect shall remain LOCKED and display error
-FR-3.0: Password Management
-FR-3.1: Command  shall initiate password change sequence
-FR-3.2: System shall request old password, new password (in sequence)
-FR-3.3: System shall update password only if old password matches
-FR-3.4: Password storage shall be non-volatile (in static memory for this implementation)
-FR-4.0: Status Display
-FR-4.1: Command  shall display current lock status (LOCKED/OPEN)
-FR-4.2: Status display shall return to menu after completion
-FR-5.0: User Feedback
-FR-5.1: LCD shall display current state/prompt on 2-line display
-FR-5.2: User input shall be echoed to LCD during entry
-FR-5.3: Operation results shall be displayed (success/error messages)
-FR-5.4: Green LED shall illuminate for 1 second on successful operations
-FR-5.5: Red LED shall illuminate for 1 second on errors/failures
-FR-5.6: Feedback timing shall be non-blocking (not delay-based)
+- FR-1.0: Acquisition
+- FR-1.1: The system shall sample NTC raw ADC periodically (configurable interval, 20-100 ms).
+- FR-1.2: The system shall convert raw ADC to voltage and temperature.
+- FR-2.0: Conditioning
+- FR-2.1: The system shall clamp values to a valid range.
+- FR-2.2: The system shall apply exponential low-pass filtering.
+- FR-2.3: The system shall detect threshold crossings with hysteresis (T +/- H).
+- FR-2.4: The system shall apply persistence before alert state changes.
+- FR-3.0: Alerting and outputs
+- FR-3.1: The red alert output shall control LED on D13 (NTC path).
+- FR-3.1.1: Red LED shall remain OFF below 25C, turn ON for 25C <= T < 30C, and BLINK for T >= 30C.
+- FR-3.1.2: The blue alert output shall control LED on D12 (DHT22 path) with the same thresholds: OFF below 25C, ON for 25C <= T < 30C, BLINK for T >= 30C.
+- FR-3.2: LCD shall display compact runtime status.
+- FR-3.3: Serial reporting shall include intermediate values and state flags.
+- FR-4.0: Runtime configuration
+- FR-4.1: The system shall accept startup configuration via `scanf`.
+- FR-4.2: Defaults shall be applied when configuration is incomplete/invalid
 
 Non-functional specifications:
-NFR-1.0: Performance
-NFR-1.1: System response latency shall be < 100ms (target: < 50ms)
-NFR-1.2: Keypad debounce delay shall be 20ms ± 5ms
-NFR-1.3: LED feedback duration shall be 1000ms ± 100ms
-NFR-1.4: Real-time scheduling: no blocking delays during interactive mode
-NFR-2.0: Reliability
-NFR-2.1: System shall not miss valid key presses
-NFR-2.2: Password comparison shall be case-sensitive and exact-match
-NFR-2.3: State machine shall prevent invalid transitions
-NFR-2.4: System shall recover from invalid input without data loss
-NFR-3.0: Resource Efficiency
-NFR-3.1: RAM usage shall not exceed 40% (< 819 bytes)
-NFR-3.2: Flash usage shall not exceed 50% (< 16KB)
-NFR-3.3: No dynamic memory allocation in critical paths
-NFR-3.4: LEDs off by default (no power waste)
-NFR-4.0: Maintainability
-NFR-4.1: Code shall be organized in modular drivers (ECAL) and FSM (SRV)
-NFR-4.2: Hardware layer (MCAL) shall be isolated from business logic
-NFR-4.3: Each module shall have clear, documented public interfaces
-NFR-4.4: Code comments shall explain non-obvious logic (20-30% comment density)
-NFR-5.0: Scalability
-NFR-5.1: Drivers shall be reusable across multiple projects
-NFR-5.2: FSM shall be extensible for additional operations
-NFR-5.3: Hardware pin assignments shall be easily configurable
-NFR-5.4: Password length shall be configurable (currently 10 bytes max)
+- NFR-1.0: Performance
+- NFR-1.1: Alert reaction target shall be under 100 ms for fast profile.
+- NFR-1.2: Reporting shall remain periodic and deterministic.
+- NFR-2.0: Reliability
+- NFR-2.1: No deadlocks under normal operation.
+- NFR-2.2: No oscillatory alert toggling near threshold.
+- NFR-3.0: Maintainability
+- NFR-3.1: Drivers and service modules shall be reusable.
+- NFR-3.2: Task responsibilities shall remain clearly separated.
+- NFR-4.0: Resource efficiency
+- NFR-4.1: Static allocation where practical and bounded memory usage.
 
 System Constraints:
-- Platform: Arduino Uno (ATmega328P, 16MHz, 2KB RAM, 32KB Flash)
-- Input device: 4x4 matrix keypad (16 total keys)
-- Display: 16x2 character LCD (HD44780-compatible)
-- Output indicators: Red LED (error), Green LED (success)
-- Development tools: PlatformIO IDE, VS Code, Wokwi simulator
-d.	Description of the Technologies Used and the Context 
-The system is structured using a Finite State Machine (FSM) architecture, where each state represents a distinct operating condition such as MENU, LOCKED, UNLOCKED, INPUT, or ERROR. Transitions between states occur based on events like keypad input or password verification results. This approach ensures deterministic behavior, clear code structure, and easy validation of all possible states and transitions, making it well-suited for embedded applications.
-User input is acquired through a 4×4 matrix keypad, which uses 4 rows and 4 columns to detect 16 keys with only 8 GPIO pins. The scanning method activates one row at a time and reads the column lines to detect pressed keys. To eliminate false triggering caused by mechanical switch bounce (100–500 μs), software debouncing is implemented using a ~20 ms validation delay and key state comparison.
-The system follows a non-blocking, event-driven design using the millis() function instead of delay(). This allows continuous keypad monitoring, LED updates, and timer-based state management within the main loop. Visual feedback is provided by a 2×16 LCD controlled via the HD44780 4-bit interface. Each character write takes approximately 40 μs, enabling fast screen updates while the system continues processing input. A driver abstraction layer simplifies display control through a high-level print interface.
+- Platform: Arduino Mega 2560 (ATmega2560, 16 MHz).
+- Sensors: Wokwi NTC sensor on A0 and DHT22 on D7.
+- Alert outputs: red LED on D13 and blue LED on D12.
+- Display: 16x2 I2C LCD (`0x27`).
+- Development tools: PlatformIO IDE, VS Code, Wokwi simulator.
+- RTOS: FreeRTOS (Arduino_FreeRTOS package).
+d. Description of the Technologies Used and the Context 
+The implementation is based on a layered embedded architecture in which each module has a clear role in the processing chain. At the input stage, `NtcAdcDriver` acquires analog samples and converts raw ADC readings into voltage and temperature values, while `DhtSensorDriver` acquires digital temperature/humidity values from DHT22. NTC values are then processed by the `SignalConditioning` module, where clamping, exponential filtering, hysteresis, and persistence are applied in sequence to obtain a stable and decision-ready signal.
+Execution is managed through FreeRTOS, which allows the application to run concurrent periodic tasks for acquisition, conditioning, alerting, and reporting. Instead of using a single blocking loop, each stage is scheduled according to its own recurrence, resulting in more predictable runtime behavior and easier timing adjustments.
+Communication between tasks is implemented with queue-based data transfer, semaphore notifications, and mutex-protected shared state. This approach prevents race conditions on critical data paths and supports deterministic operation, which is essential for embedded monitoring systems where timing consistency and robust state transitions are required.
 e.	Presentation of Hardware and Software Components and Their Roles
-The system is built around an Arduino Uno (ATmega328P, 16 MHz), which executes the FSM logic and manages all peripherals. User input is provided through a 4×4 matrix keypad, while a 16×2 HD44780-compatible LCD displays menus, prompts, and status messages. Visual feedback is ensured by a red LED (error/locked state) and a green LED (success/unlocked state), each protected by 220 Ω current-limiting resistors. The circuit is assembled on a breadboard using jumper wires and powered via USB [1].
-Software development is carried out in Visual Studio Code with PlatformIO. The Arduino framework handles hardware abstraction, while the Keypad and LiquidCrystal libraries manage keypad scanning and LCD control. Testing is supported by the Wokwi simulator, and standard C/C++ functions [3] are used for string processing and logic implementation.
+The hardware platform is built around Arduino Mega 2560, which provides the computational resources and I/O interfaces required by the application. Temperature is measured through an NTC sensor connected to `A0` and a DHT22 sensor connected to `D7`. Alert indication is provided by two LEDs: red on `D13` (NTC policy) and blue on `D12` (DHT22 policy), while a 16x2 I2C LCD is used for compact local status display and user-oriented monitoring.
+From a software perspective, the project is developed in VS Code using PlatformIO and the Arduino framework, which simplifies board integration and library management. FreeRTOS provides the scheduling and synchronization infrastructure through primitives such as `xTaskCreate`, `vTaskDelayUntil`, queues, semaphores, and mutexes, enabling safe concurrent execution of independent processing stages.
+For diagnostic visibility and runtime parameter setup, STDIO is redirected to serial communication. This enables structured `printf` reporting of intermediate processing values and `scanf`-based startup configuration, which significantly improves testability and repeatability during simulation and validation.
 f.	System Architecture Explanation and Justification of the Solution
-The system architecture follows a layered and modular design approach. The application layer (main program) is responsible for interpreting user commands and coordinating system behavior. The driver layer contains reusable modules for peripheral control, such as the LED driver and the serial STDIO driver. Beneath this layer lies the hardware abstraction provided by the Arduino framework, which interacts directly with the microcontroller’s hardware registers. This separation of concerns ensures improved maintainability, scalability, and reusability.
-The choice of using STDIO redirected to the serial interface is justified by the need for structured and formatted communication. Functions such as printf() offer flexibility and clarity compared to basic serial print methods. Additionally, the modular organization into .h and .cpp files ensures that peripheral functionalities can be reused in future laboratory works, aligning with best practices in embedded software engineering [2].
-g.	Definition of Test Scenarios and Validation Criteria
-For the smart lock system, test scenarios are organized into categories: (1) Functional validation testing all operational modes (menu navigation, lock/unlock commands, password change, status display), (2) Non-functional testing addressing performance metrics (response latency <100ms, debounce delay 20±5ms, LED timing 1000±100ms), (3) Behavioral testing verifying FSM state transitions and error handling, and (4) Edge case testing covering boundary conditions (empty password input, invalid commands, rapid key presses). Each scenario includes preconditions (initial system state), execution steps (user actions), expected results (system behavior and outputs), and acceptance criteria (pass/fail determination). This comprehensive approach ensures not only that the system works correctly under normal conditions but also behaves robustly when encountering unexpected or extreme inputs.
-Validation criteria provide quantifiable benchmarks against which test results are measured, ensuring objective assessment of system compliance. Functional criteria evaluate whether commands produce correct state changes: unlock with correct password must transition to UNLOCKED state with green LED feedback and "Access Granted!" message within 50ms. Performance criteria use instrumentation tools: latency measured via timestamp comparison (millis() function), debounce effectiveness determined by input logging (counting registered keypresses vs. physical presses), and LED timing verified with oscilloscope or visual observation. Reliability criteria assess robustness: system stability evaluated through 5-minute continuous operation without hangs or crashes, error recovery tested by providing invalid inputs and verifying graceful degradation without data loss. Memory efficiency validated through compiler output reports (RAM usage <40%, Flash usage <50%), and state machine correctness verified by manually traversing all possible state transitions and confirming no invalid transitions are possible. This multi-dimensional validation framework (functional, performance, reliability, resource) provides comprehensive confidence that the implementation meets all laboratory requirements.
-h.	Technological Context and Industry Relevance
-Smart lock systems represent a significant growth sector in:
-- Home Automation: Smart locks integrated with voice assistants and mobile apps
-- Commercial Access Control: Keycard and PIN-based entry systems for office buildings
-- IoT Security: Authentication layers for smart home devices and connected appliances
-- Industrial Equipment: Lockout-tagout (LOTO) systems for machinery safety
-The principles demonstrated in this laboratory work (menu-driven interfaces, FSM logic, password management, multi-peripheral coordination) directly transfer to professional access control systems. Modern smart locks often implement similar FSM architectures for handling menu navigation, password entry, and unlock sequences, though with enhanced security features (encryption, biometrics) and connectivity (WiFi, Bluetooth).
-i.	Relevant Case Study Demonstrating Applicability
-Modern smart home locks implement functionality similar to the proposed laboratory system but at a larger scale. They typically include a physical keypad for PIN entry, LED or LCD indicators for status feedback, and smartphone application support for remote access. Many systems also integrate with voice assistants and maintain internal logic for password verification, keypad debouncing (20–50 ms), state tracking (locked, unlocked, jammed), event logging, and battery monitoring with low-power warnings.
-Commercial office entry systems expand on this concept by adding features such as card readers, network connectivity for centralized reporting, multi-level access control, emergency override mechanisms, and full audit trails of entry events. Their operation is commonly structured around a Finite State Machine (FSM), including states such as IDLE, READING_PIN, VERIFYING, GRANTING_ACCESS, DENYING_ACCESS, and ERROR, ensuring deterministic and secure behavior.
-Automotive vehicle locking systems follow similar embedded design principles. They support push-button lock/unlock via key fobs, configurable door and climate settings, time-based auto-lock functions, and emergency unlock procedures, all integrated with the vehicle’s central computer. Timing requirements are strict, with lock/unlock responses typically under 100 ms, debouncing intervals of 20–50 ms, short LED feedback durations, and deterministic state transitions—characteristics that align closely with the laboratory implementation.
-The modular implementation (Figure 1) follows separation between interface and implementation. Header files (.h) define task function prototypes and shared data types, while source files (.c) implement FreeRTOS task functions for button debouncing, statistics accumulation, LED feedback, and periodic reporting. The C++ bridge (main.cpp) provides hardware wrappers and UART stdio redirection.
+The proposed architecture is decomposed into independent periodic tasks, each assigned to a single responsibility. The acquisition task captures NTC samples, the conditioning task transforms NTC raw data into robust decision variables, the LCD task periodically reads DHT22 data, and the alert task applies explicit thermal policies to hardware outputs (red LED for NTC, blue LED for DHT22). The reporting task exposes both intermediate and final states to serial/LCD interfaces. This separation improves clarity of execution flow and makes each stage easier to validate independently.
+The design is justified by the need for deterministic behavior under noisy input conditions. A monolithic loop can mix responsibilities and introduce timing coupling, while task-level decomposition allows each processing stage to run at an appropriate recurrence. As a result, sampling frequency, filtering aggressiveness, and reporting cadence can be tuned without rewriting the entire control loop.
+In addition, the architecture improves maintainability and scalability. New features, such as additional sensors or alternative alert channels, can be integrated by extending specific modules or adding tasks, while preserving existing interfaces and synchronization contracts.
+g.	Definition of test scenarios and validation criteria
+Validation is organized into complementary groups of scenarios that target functionality, behavior under noise, timing performance, and long-run stability. Functional scenarios verify startup configuration, correctness of the acquisition and conditioning pipeline, and proper activation or clearing of alert states. Behavioral scenarios focus on threshold-border conditions to confirm that hysteresis and persistence prevent spurious state oscillations.
+Performance scenarios evaluate response under a fast profile, typically using reduced sampling and persistence windows, to confirm that alert decisions are produced within the expected latency budget. Robustness scenarios extend execution time to ensure the task set remains stable, without deadlocks, starvation, or output inconsistency.
+The validation criteria are based on both logical correctness and temporal consistency. A test is considered passed when transitions occur only after hysteresis and persistence requirements are met, intermediate reported values remain coherent (`raw`, voltage, filtered temperature), and LED/LCD outputs remain synchronized with the debounced internal state throughout repeated operation.
+h.	Technological context and industry relevance
+The implemented architecture reflects common design patterns used in industrial sensing nodes, HVAC control systems, and thermal safety supervision platforms. In these domains, raw analog measurements are rarely suitable for direct decision-making because noise, transient spikes, and quantization artifacts can produce unstable outputs.
+To address this, production systems typically apply staged signal conditioning before triggering alarms or control actions. Techniques such as low-pass filtering, hysteresis windows, and persistence confirmation are widely adopted to reduce false positives, avoid actuator chatter, and guarantee predictable transitions between operating states.
+From an engineering perspective, this laboratory implementation demonstrates the same principles expected in professional embedded projects: deterministic scheduling, modular interfaces, synchronized shared-state access, and traceable runtime diagnostics. These characteristics make the solution directly relevant as a training baseline for real-world firmware development.
+i.	Technological context and industry relevance
+A representative case study is a thermal safety monitor used in industrial electrical cabinets or HVAC subsystems. In such applications, firmware periodically samples temperature sensors, filters the incoming signal, evaluates threshold conditions, and triggers local or remote alarms only after stability criteria are met. This avoids nuisance alarms during short transients while preserving fast reaction when abnormal conditions persist.
+The task-based structure used in this laboratory maps directly to that workflow. Acquisition tasks interface with sensors, conditioning tasks enforce numerical robustness, alert tasks manage actuators, and reporting tasks provide visibility through HMI or telemetry channels. Because each function is separated and synchronized, the system remains easier to test, diagnose, and certify.
+Therefore, the current implementation is not only academically valid but also practically transferable to production-grade embedded monitoring systems. It provides a scalable foundation that can be extended with additional sensors, data logging, remote communication, or multi-level alarm policies without changing the core architectural principles.
+2.	System Design
+The modular implementation (Figure 1) follows the separation between interface and implementation. Header files (`.h`) define data structures (`Lab3Shared`, `Lab3Config`, `Lab3RuntimeState`, etc.) and module interfaces (`NtcAdcDriver`, `SignalConditioner`, `AlertManager`, etc.), while source files (`.cpp`) contain task logic, synchronization handling, and hardware control implementation.
  
 Figure 1: Structure of the laboratory work
-The architecture separates application tasks from RTOS services, C-callable hardware wrappers, and Arduino/AVR hardware abstraction (Figure 2). SharedState centralizes all inter-task data with mutex and semaphore handles. FreeRTOS manages preemptive scheduling, task switching, and blocking delays. The fdev_setup_stream mechanism redirects printf to UART TX and scanf to UART RX [3].
+The architecture (Figure 2) separates signal acquisition, decision logic, and output rendering into distinct periodic tasks. Shared state is synchronized with mutexes, while queue and semaphore channels ensure deterministic producer-consumer behavior [3].
  
 Figure 2: Architecture schema
-From the user perspective (Figure 3), interaction begins with button presses on D4. During operation, each press/release event produces a formatted printf event log, while LEDs provide visual feedback: green for short press, red for long press, and yellow blinks proportional to press type.
+From the user perspective (Figure 3), interaction begins by optional serial configuration input at startup. During execution, the user modifies NTC and DHT22 temperatures (Wokwi controls or physical thermal variation), and the system responds through red/blue LED state changes, LCD status lines, and periodic serial diagnostics.
  
 Figure 3: User interaction 
-The activity diagram (Figure 4) starts with hardware initialization. After FreeRTOS scheduler starts, TaskMeasurement polls and debounces the button, updates stats under mutex, and queues each event. TaskStatistics blocks on queue receive, consumes events, and drives LED feedback with vTaskDelay. TaskReporting periodically snapshots and resets statistics under mutex and prints aggregated metrics via printf.
+The activity flow (Figure 4) starts with initialization, configuration parsing, and RTOS object creation. After scheduler start, acquisition and conditioning run periodically, followed by alert update and reporting tasks.
  
 Figure 4: Activity diagram
-The state representation (Figure 5) for runtime behavior includes implicit states such as IDLE (tasks blocked on queue/delay), DEBOUNCING (consecutive matching samples), EVENT_QUEUED, BLINK_ACTIVE (yellow LED toggling via vTaskDelay), and REPORT_WINDOW (statistics snapshot and reset). Transitions are triggered by debounced button transitions, queue send/receive, and vTaskDelayUntil expiration.
+The decision state model (Figure 5) is based on hysteresis and persistence. Candidate transitions are accepted only after a sufficient number of stable samples, which avoids false toggling around threshold borders.
  
-Figure 5: State diagram for the system
-The sequence diagram (Figure 6) captures interaction among TaskMeasurement, SharedState (queue + mutex), TaskStatistics, LED GPIO wrappers, and TaskReporting. TaskMeasurement updates counters under statsMutex and sends press events to pressEventQueue. TaskStatistics receives queued events and drives LEDs. TaskReporting locks statsMutex, reads and resets counters, then prints via printf.
+Figure 5: Decision state model diagram for the system
+The sequence diagram (Figure 6) captures one processing iteration between hardware peripherals and the microcontroller. The NTC sensor provides analog and DHT22 provides digital temperature/humidity input, after which the MCU evaluates policy thresholds and drives user feedback through red/blue LEDs, LCD, and serial interface.
  
-Figure 6: Sequence diagram of user action, 1 iteration
-The electrical implementation (Figure 7) uses an ATmega2560-based board with a push-button on D4 (to GND, internal pull-up enabled), green LED on D13, red LED on D12, yellow LED on D11 (each through appropriate resistor to GND), and serial USB connection for printf UART communication.
-
-
+Figure 6: Sequence diagram, 1 iteration
+The  electrical setup (Figure 7) uses an Arduino Mega 2560, with NTC output connected to `A0`, DHT22 data connected to `D7`, red LED to `D13`, blue LED to `D12`, and LCD1602 I2C connected through SDA/SCL. The UART over USB is used for `printf` reports and startup `scanf` configuration.
  
 Figure 7: Modelated electronic schema
-Task priority diagram (Figure 8) includes three concurrent FreeRTOS tasks: TaskMeasurement (priority 3, polls every tick), TaskStatistics (priority 2, blocks on queue receive), and TaskReporting (priority 1, periodic via vTaskDelayUntil every 10 s). Preemptive scheduling ensures TaskMeasurement always runs promptly when ready, while TaskStatistics and TaskReporting execute when higher-priority tasks are blocked.
+To highlight implementation details, a more detailed system diagram is presented in Figure 8, showing the signal processing chains for the binary path (alert), typically implemented in the service layer of the application.
  
-Figure 8: Task priority diagram
+Figure 8: Implementation details, diagram
 3.	Results
-The system was tested using PlatformIO and Wokwi simulator, then validated on hardware. After startup, the serial monitor displays FreeRTOS initialization messages and prompts the user to enter the short/long threshold via scanf. During operation, each press release generates a printf log line with measured duration and SHORT/LONG label. TaskStatistics activates green or red LED based on press type and blinks yellow LED (5 times for short, 10 for long) using vTaskDelay. TaskReporting prints periodic reports with total, short, long, and average duration via printf, then resets counters for the next 10-second interval.
+The implementation was tested in PlatformIO [4] and Wokwi [5] with default and custom startup configurations. At initialization, the system accepts optional serial parameters (`thresholdC hysteresisC sampleMs persistMs reportMs alpha`), validates limits, and then starts all FreeRTOS tasks. During runtime, serial output continuously exposes internal pipeline stages through two periodic lines per report cycle: one line for NTC (`rawAdc`, raw/clamped/filtered temperature, persistence/state) followed by one line for DHT22 (`temperature`, `humidity`, validity, LED mode).
+Observed behavior confirms robust threshold-state decisions in the conditioning path and stable LED actuation policy in the output path. The conditioner still uses hysteresis and persistence for NTC state validation (`NORMAL`/`ALERT`), while user-facing LED behavior follows explicit thermal policies with shared thresholds: for both channels, OFF below 25C, ON for 25C <= T < 30C, and BLINK for T >= 30C. The red LED is driven by NTC conditioned temperature and the blue LED is driven by DHT22 temperature. LCD messages remain coherent with temperature mode and threshold context, and serial output reports intermediate stages (`raw`, `clamped`, `filtered`) together with state and persistence counters.
 The testing requirements definition is shown in the following table (Table 1).
+
+
+
 Table 1: Testing requirements
 ID	Test category	Test description	Expected result
-T1	Initialization	Power on system, enter threshold via scanf	printf shows startup messages; FreeRTOS tasks created; LEDs self-test; threshold acknowledged
-T2	RTOS Scheduling	Observe concurrent task execution	Three tasks run with assigned priorities; preemption occurs correctly
-T3	Short Press	Press and release below threshold	printf shows SHORT; green LED on; 5 yellow blinks (2.5s total)
-T4	Long Press	Press and hold above threshold	printf shows LONG; red LED on; 10 yellow blinks (5s total)
-T5	Semaphore Sync	Generate multiple presses	TaskStatistics responds to each semaphore signal; no missed or duplicate events
-T6	Mutex Protection	Concurrent access to shared data	Statistics remain coherent; no data corruption under rapid presses
-T7	Periodic Report	Wait 10s window	printf shows total/short/long/avg; statistics reset after report
-T8	No-Press Window	No interaction for one report period	Report shows zeros via printf; system remains stable
-T9	scanf Input	Enter custom threshold at startup	System uses entered value for SHORT/LONG classification
-T10	LED Feedback	Alternate short and long presses	Green/red LED and yellow blink count correspond to event class
-T11	Debounce	Rapid repeated button actions	No false duplicate events under normal physical operation
-T12	Stability	Continuous repeated operations over minutes	System runs without deadlock, stack overflow, or task starvation; reports remain coherent
+T1	Initialization	Boot with no serial config within timeout	Default configuration loaded and printed
+T2	Runtime configuration	Provide full 6-field config string at startup	Values accepted, clamped where needed, system starts
+T3	Acquisition correctness	Move NTC slider in simulation	rawAdc, voltage, and raw temperature change consistently
+T4	Filter behavior	Apply step increase/decrease in temperature	Filtered output changes smoothly (no abrupt oscillation)
+T5	Hysteresis behavior	Hover near threshold boundaries	No rapid state toggling between NORMAL and ALERT
+T6	Persistence behavior	Short transient above threshold	Alert not triggered unless persistence is satisfied
+T7	LED policy	Keep temperature in three zones: <25C, 25-30C, >=30C for NTC and DHT22	Red (NTC) and blue (DHT22) LEDs are OFF below 25C, ON in 25-30C, and BLINK at/above 30C
+T8	LCD reporting	Observe periodic LCD refresh	Line 1 shows NTC mode/temperature, line 2 shows DHT22 temperature/humidity
+T9	Serial reporting	Observe periodic two-line report per cycle	First line reports NTC, second line reports DHT22; coherent values and stable cadence
+T10	Long-run stability	Continuous operation over extended simulation	No deadlocks, queue overflow faults, or task starvation
 
-Next images are the results of testing, including simulation captures (Figure 9-11) and hardware captures (Figure 12-14). All video footages are in the drive: 
+Next images are the results of testing, including simulation captures (Figure 9-11) and hardware captures (Figure 12-14). All video footages are in the drive and the code can be found on github repository at [6]: 
 https://drive.google.com/drive/folders/1irxzplvWRQgibA78ml7MvxLl461tc6hT?usp=sharing
 
+
  
-Figure 9: Behaviour on short press
+Figure 9: Layout in the simulator
  
-Figure 10: Behaviour on long press
+Figure 10: Behaviour on high temperatures
  
 Figure 11: Schema in the simulator
  
@@ -183,15 +164,13 @@ Figure 14: Long press and yellow blink (in this photo it’s on low)
  
 Figure 14: Report printing
 4.	Conclusions
-The implemented laboratory work application meets the requirements for a preemptive real-time embedded system using FreeRTOS with inter-task synchronization via semaphores and mutexes. The FreeRTOS scheduler provides efficient priority-based preemption, allowing TaskMeasurement to respond promptly to button events while TaskStatistics blocks on semaphore signals and TaskReporting executes periodically at lowest priority. Standard C printf/scanf, redirected to UART via fdev_setup_stream, provide portable and formatted serial I/O for diagnostics, event logging, and user configuration.
-The objectives of the laboratory work were achieved: preemptive multitasking principles were implemented using FreeRTOS, inter-task communication was validated through binary semaphores and mutex-protected shared structures, and visual feedback was demonstrated through multi-LED control with RTOS-based timing. The scanf-based threshold configuration at startup demonstrates bidirectional serial I/O capability. The periodic reporting mechanism provides clear runtime observability via printf and confirms coherent statistics over fixed windows.
-Compared to the bare-metal cyclic scheduler approach (Lab2_1), FreeRTOS provides cleaner task isolation, efficient blocking (no polling overhead), built-in synchronization primitives, and easier scalability for additional tasks. The trade-offs include higher RAM consumption for task stacks and RTOS kernel overhead, which are acceptable on the ATmega2560 platform.
-Future improvements can include: introduction of task notifications (xTaskNotify) as a lighter alternative to binary semaphores, bounded queue-based event passing (xQueueSend/xQueueReceive), optional EEPROM persistence for long-term counters, runtime threshold reconfiguration via a serial command task using scanf, and stack high-water-mark monitoring for optimized memory usage.
-
+The laboratory objectives were achieved by implementing a complete FreeRTOS-based temperature monitoring pipeline on Arduino Mega. The final system includes periodic acquisition, structured conditioning, debounced threshold-state decisions, and dual-channel observability through serial reports and LCD output. The output behavior is easy to interpret in operation: both LED channels remain OFF below 25C, turn ON in the interval 25C <= T < 30C, and BLINK from 30C, with red driven by NTC and blue driven by DHT22, while conditioned NTC state logic remains protected by hysteresis and persistence.
+From a signal-processing perspective, the combination of clamping, exponential filtering, hysteresis, and persistence proved effective for reducing false alarms caused by noise or short transients. This confirms that robust decision logic can be implemented with moderate computational cost and without complex control algorithms, making the approach suitable for constrained embedded targets.
+Compared to single-loop implementations, the RTOS partitioning improves maintainability, timing control, and scalability. Future extensions may include multi-sensor fusion, alarm severity levels, EEPROM-backed configuration profiles, and telemetry integration. During preparation of this report, AI-based assistance tools were used for drafting support; all technical content was reviewed and aligned with implemented source code.
 During the preparation of this report, it was used ChatGPT, Copilot and other AI-based assistance tools for generating and consolidating textual and code contents, as well as partially architecture design content. The generated information was reviewed, validated, and adjusted according to the laboratory work requirements.
 Bibliography
-[1] “What is an Embedded Operating System and the Different Types,” Total Phase Blog. Accessed: Feb. 20, 2026. [Online]. Available: https://www.totalphase.com/blog/2020/02/what-is-an-embedded-operating-system-and-the-different-types/
-[2] G Mostofa BD. 8051 Push Button Interfacing. https://gmostofabd.github.io/8051-Push Button/ 
+[1] A. Bragarenco and V. Astafi, *Sisteme Electronice Încorporate: Îndrumar metodic pentru lucrări de laborator*, O. Lupan, Ed., I. Pocaznoi, Rev. Chișinău, Moldova: Tehnica‑UTM, Universitatea Tehnică a Moldovei, Facultatea Calculatoare, Informatică și Microelectronică, Departamentul Microelectronică și Inginerie Biomedicală.
+[2] “NTC Thermistor – Resistor Types,” EE Power, Accessed: Mar. 7, 2026. [Online]. Available: https://eepower.com/resistor-guide/resistor-types/ntc-thermistor/
 [3] Andrei Bragarenco, Galina Marusic, and Calin Ciufudean. “Layered architecture approach of the sensor software component stack for the Internet of Things applications”. In: WSEAS Transactions on Computer Research 7 (2019), pp. 124–135.
 [4] “Mega 2560 Rev3 | Arduino Documentation.”. [Online]. Available: https://docs.arduino.cc/hardware/mega-2560/
 [5] “Welcome to Wokwi! | Wokwi Docs.” Accessed: [Online]. Available: https://docs.wokwi.com/
@@ -260,7 +239,6 @@ void LedDriver::Toggle()
     digitalWrite(ledPin, !digitalRead(ledPin));  // MCAL: Toggle pin
 }
 
-
 LedDriver.h
 /**
  * @file LedDriver.h
@@ -327,347 +305,1246 @@ public:
 
 #endif
 
-
-Lab2_2_main.c
+LcdDriver.cpp
 /**
- * @file Lab2_2_main.c
- * @brief Pure-C Lab 2.2 entry – creates FreeRTOS tasks, inits hardware
+ * @file LcdDriver.cpp
+ * @brief ECAL Layer - LCD Driver Implementation
  */
 
-#include "Lab2_2_main.h"
-#include "Lab2_2_Shared.h"
-#include "avr_helpers.h"
-#include "MeasurementTask.h"
-#include "StatisticsTask.h"
-#include "ReportingTask.h"
+#include "LcdDriver.h"
+#include <string.h>
 
-#include <stdio.h>
-#include <Arduino_FreeRTOS.h>
-#include <task.h>
-#include <semphr.h>
-#include <queue.h>
+// Global LCD driver instance for printf callback
+LcdDriver* g_lcdDriver = nullptr;
 
-/* ── Global shared state (declared extern in Lab2_2_Shared.h) ──── */
-SharedState g_shared;
-
-void lab2_2_setup(void)
+LcdDriver::LcdDriver(uint8_t rs, uint8_t en, uint8_t d4, uint8_t d5, uint8_t d6, uint8_t d7)
+    : rs(rs), en(en), d4(d4), d5(d5), d6(d6), d7(d7), bufferIndex(0), lastUpdateTime(0)
 {
-    /* --- Hardware pin init via C wrappers --- */
-    hw_pin_mode(BTN_PIN, PIN_MODE_INPUT_PULLUP);
-    hw_pin_mode(LED_GREEN_PIN, PIN_MODE_OUTPUT);
-    hw_pin_mode(LED_RED_PIN,   PIN_MODE_OUTPUT);
-    hw_pin_mode(LED_YELLOW_PIN, PIN_MODE_OUTPUT);
+    lcd = nullptr;
+    memset(printBuffer, 0, sizeof(printBuffer));
+}
 
-    hw_digital_write(LED_GREEN_PIN,  PIN_LOW);
-    hw_digital_write(LED_RED_PIN,    PIN_LOW);
-    hw_digital_write(LED_YELLOW_PIN, PIN_LOW);
+void LcdDriver::Init() {
+    lcd = new LiquidCrystal(rs, en, d4, d5, d6, d7);
+    lcd->begin(16, 2);
+    g_lcdDriver = this;  // Store global reference for printf callback
+}
 
-    printf("[Lab2_2] FreeRTOS monitor starting\n");
-
-    /* --- LED self-test (proves wiring works) --- */
-    hw_digital_write(LED_GREEN_PIN, PIN_HIGH);
-    hw_delay_ms(300);
-    hw_digital_write(LED_GREEN_PIN, PIN_LOW);
-
-    hw_digital_write(LED_RED_PIN, PIN_HIGH);
-    hw_delay_ms(300);
-    hw_digital_write(LED_RED_PIN, PIN_LOW);
-
-    hw_digital_write(LED_YELLOW_PIN, PIN_HIGH);
-    hw_delay_ms(300);
-    hw_digital_write(LED_YELLOW_PIN, PIN_LOW);
-
-    /* --- Zero shared state --- */
-    g_shared.stats.totalPresses   = 0;
-    g_shared.stats.shortPresses   = 0;
-    g_shared.stats.longPresses    = 0;
-    g_shared.stats.totalDurationMs = 0;
-    g_shared.stats.shortDurationMs = 0;
-    g_shared.stats.longDurationMs  = 0;
-
-    /* --- Create synchronisation primitives --- */
-    g_shared.pressEventQueue = xQueueCreate(PRESS_EVENT_QUEUE_LEN,
-                                            sizeof(PressEventData));
-    g_shared.statsMutex     = xSemaphoreCreateMutex();
-    g_shared.ioMutex        = xSemaphoreCreateMutex();
-
-    if (!g_shared.pressEventQueue || !g_shared.statsMutex || !g_shared.ioMutex)
-    {
-        printf("[Lab2_2] FATAL: RTOS primitive alloc failed!\n");
-        for (;;) { /* halt */ }
+void LcdDriver::Print(const char* l1, const char* l2) {
+    lcd->clear();
+    delay(2);  // HD44780 clear takes ~1.52ms; wait before writing or first chars are lost
+    lcd->setCursor(0, 0);
+    lcd->print(l1);
+    if (l2 && l2[0] != '\0') {
+        lcd->setCursor(0, 1);
+        lcd->print(l2);
     }
-    printf("[Lab2_2] Queue + mutexes OK\n");
-
-    /* --- Create FreeRTOS tasks --- */
-    BaseType_t ok;
-
-    ok = xTaskCreate(TaskMeasurement, "BtnMeas", 512, (void *)0, 3, (TaskHandle_t *)0);
-    if (ok != pdPASS) { printf("FAIL: BtnMeas\n"); for(;;); }
-    printf("[Lab2_2] BtnMeas task created (pri 3, 512w)\n");
-
-    ok = xTaskCreate(TaskStatistics,  "Stats",   512, (void *)0, 2, (TaskHandle_t *)0);
-    if (ok != pdPASS) { printf("FAIL: Stats\n");   for(;;); }
-    printf("[Lab2_2] Stats task created (pri 2, 512w)\n");
-
-    ok = xTaskCreate(TaskReporting,   "Report",  512, (void *)0, 1, (TaskHandle_t *)0);
-    if (ok != pdPASS) { printf("FAIL: Report\n");  for(;;); }
-    printf("[Lab2_2] Report task created (pri 1, 512w)\n");
-
-    printf("[Lab2_2] All tasks created - scheduler starts after setup()\n");
+    bufferIndex = 0;
+    memset(printBuffer, 0, sizeof(printBuffer));
 }
 
-void lab2_2_loop(void)
-{
-    /* Called from idle-task hook – must NOT block */
+void LcdDriver::Clear() {
+    lcd->clear();
+    bufferIndex = 0;
+    memset(printBuffer, 0, sizeof(printBuffer));
 }
-Lab2_2_main.h
-/**
- * @file Lab2_2_main.h
- * @brief Pure-C header for Lab 2.2 setup/loop entry points
- */
 
-#ifndef LAB2_2_MAIN_H
-#define LAB2_2_MAIN_H
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-void lab2_2_setup(void);
-void lab2_2_loop(void);
-
-#ifdef __cplusplus
+void LcdDriver::SetCursor(uint8_t col, uint8_t row) {
+    lcd->setCursor(col, row);
 }
-#endif
 
-#endif /* LAB2_2_MAIN_H */
+int LcdDriver::PutChar(char c) {
+    // Handle newline: add to buffer then flush so we can split on \n for correct line breaks
+    if (c == '\r' || c == '\n') {
+        if (bufferIndex < sizeof(printBuffer) - 1) {
+            printBuffer[bufferIndex++] = '\n';
+            printBuffer[bufferIndex] = '\0';
+        }
+        FlushPrintBuffer();
+        return 0;
+    }
+    
+    // Add character to buffer
+    if (bufferIndex < sizeof(printBuffer) - 1) {
+        printBuffer[bufferIndex++] = c;
+        printBuffer[bufferIndex] = '\0';
+        
+        // Flush when buffer fills (would truncate otherwise)
+        if (bufferIndex >= sizeof(printBuffer) - 1) {
+            FlushPrintBuffer();
+        }
+    }
+    
+    return 0;
+}
 
-Lab2_2_Shared.h
+void LcdDriver::FlushPrintBuffer() {
+    if (bufferIndex == 0) return;
+    
+    char line1[17] = {0};
+    char line2[17] = {0};
+    
+    // Try to split on newline first (so "line1\nline2" displays correctly)
+    char* nl = (char*)memchr(printBuffer, '\n', bufferIndex);
+    if (nl) {
+        size_t len1 = (size_t)(nl - printBuffer);
+        if (len1 > 16) len1 = 16;
+        strncpy(line1, printBuffer, len1);
+        line1[len1] = '\0';
+        size_t off2 = len1 + 1;  // skip the \n
+        if (off2 < (size_t)bufferIndex) {
+            size_t len2 = (size_t)bufferIndex - off2;
+            if (len2 > 16) len2 = 16;
+            strncpy(line2, printBuffer + off2, len2);
+            line2[len2] = '\0';
+        }
+    } else {
+        // No newline: split at 16 chars
+        if (bufferIndex <= 16) {
+            strncpy(line1, printBuffer, 16);
+        } else {
+            strncpy(line1, printBuffer, 16);
+            strncpy(line2, printBuffer + 16, 16);
+        }
+    }
+    
+    Print(line1, line2);
+    lastUpdateTime = millis();
+    bufferIndex = 0;
+    memset(printBuffer, 0, sizeof(printBuffer));
+}
+LcdDriver.h
 /**
- * @file Lab2_2_Shared.h
- * @brief Pure-C shared data structures for Lab 2.2 FreeRTOS tasks
+ * @file LcdDriver.h
+ * @brief ECAL Layer - LCD Hardware Abstraction Driver with printf support
+ *
+ * Provides a high-level interface for controlling a 16x2 LCD.
+ * Also supports printf redirection to LCD display.
+ *
+ * Usage:
+ *   LcdDriver lcd(rs, en, d4, d5, d6, d7);
+ *   lcd.Init();
+ *   lcd.Print("Hello");
+ *   printf("Output to LCD");  // When stdout is redirected
  */
 
-#ifndef LAB2_2_SHARED_H
-#define LAB2_2_SHARED_H
-
-#include <stdint.h>
-#include <Arduino_FreeRTOS.h>
-#include <semphr.h>
-#include <queue.h>
-
-/* ── Pin assignments ───────────────────────────────────────────── */
-#define BTN_PIN             4
-#define LED_GREEN_PIN       13
-#define LED_RED_PIN         12
-#define LED_YELLOW_PIN      11
-
-/* ── Thresholds ────────────────────────────────────────────────── */
-#define SHORT_THRESHOLD_MS  500
-#define DEBOUNCE_SAMPLES    2
-#define PRESS_EVENT_QUEUE_LEN  64
-
-/* ── Shared data types ─────────────────────────────────────────── */
-typedef struct {
-    uint32_t durationMs;
-    uint8_t  isShort;       /* 1 = short, 0 = long */
-} PressEventData;
-
-typedef struct {
-    uint16_t totalPresses;
-    uint16_t shortPresses;
-    uint16_t longPresses;
-    uint32_t totalDurationMs;
-    uint32_t shortDurationMs;
-    uint32_t longDurationMs;
-} PressStats;
-
-typedef struct {
-    QueueHandle_t     pressEventQueue;
-    SemaphoreHandle_t statsMutex;
-    SemaphoreHandle_t ioMutex;
-    PressStats        stats;
-} SharedState;
-
-/* Defined in Lab2_2_main.c */
-extern SharedState g_shared;
-
-#endif /* LAB2_2_SHARED_H */
-
-
-ButtonDriver.h
-/**
- * @file ButtonDriver.h
- * @brief ECAL Layer - Push-Button Hardware Abstraction Driver
- *
- * Provides a non-blocking, debounced interface for a push-button.
- * Supports both active-low(INPUT_PULLUP) and active-high(INPUT) wiring.
- * The driver is designed to be called periodically (every ~20 ms)
- * via a bare-metal task scheduler; it never busy-waits.
- *
- * Debounce algorithm:
- *   The raw pin reading must remain stable for DEBOUNCE_SAMPLES
- *   consecutive Update() calls before the state is accepted.
- *   At 20 ms period this gives 5 × 20 ms = 100 ms debounce window,
- *   which is well within the ~200 ms minimum button press interval.
- *
- * Pin convention:
- *   Configurable at construction time:
- *   - active-low  + INPUT_PULLUP (button to GND)
- *   - active-high + INPUT        (button to +5V with external pull-down)
- *
- * Usage example (bare-metal task):
- *   ButtonDriver btn(A4);
- *   btn.Init();
- *   // --- called every 20 ms ---
- *   btn.Update();
- *   if (btn.WasJustReleased()) {
- *       uint32_t dur = btn.GetLastPressDuration(); // ms
- *   }
- *
- * Architecture: Lab2 -> ButtonDriver -> GPIO MCAL -> Arduino GPIO Hardware
- */
-
-#ifndef BUTTON_DRIVER_H
-#define BUTTON_DRIVER_H
+#ifndef LCDDRIVER_H
+#define LCDDRIVER_H
 
 #include <Arduino.h>
+#include <LiquidCrystal.h>
 
-class ButtonDriver
-{
-public:
-
-    explicit ButtonDriver(uint8_t pin,
-                     bool activeLow = true,
-                     bool useInternalPullup = true);
-
-    void Init();
-
-    void Update();
-
-    bool IsPressed() const;
-
-    bool WasJustReleased();
-
-    uint32_t GetLastPressDuration() const;
-
+class LcdDriver {
 private:
-    uint8_t  _pin;                    ///< GPIO pin index
-    bool     _activeLow;              ///< true: pressed=LOW, false: pressed=HIGH
-    bool     _useInternalPullup;      ///< true: pinMode INPUT_PULLUP, false: INPUT
-    bool     _debouncedState;         ///< Accepted (debounced) button state
-    uint8_t  _sampleCount;            ///< Consecutive samples counter
-    bool     _releaseFlag;            ///< Set on falling edge, cleared after read
-    uint32_t _pressStartMs;           ///< millis() timestamp of last press start
-    uint32_t _lastDurationMs;         ///< Duration of the last completed press
-
-    /** Number of consecutive matching samples required to accept a state change */
-    static const uint8_t DEBOUNCE_SAMPLES = 5;
+    LiquidCrystal* lcd;
+    uint8_t rs, en, d4, d5, d6, d7;
+    char printBuffer[33];  // Buffer for printf output (32 chars + null terminator)
+    uint8_t bufferIndex;
+    unsigned long lastUpdateTime;
+    static const unsigned long UPDATE_INTERVAL = 500;  // Update display every 500ms during printing
+public:
+    LcdDriver(uint8_t rs, uint8_t en, uint8_t d4, uint8_t d5, uint8_t d6, uint8_t d7);
+    void Init();
+    void Print(const char* l1, const char* l2 = "");
+    void Clear();
+    void SetCursor(uint8_t col, uint8_t row);
+    int PutChar(char c);  // For printf redirection
+    void FlushPrintBuffer();  // Display accumulated printf output
 };
 
-#endif // BUTTON_DRIVER_H
-ButtonDriver.cpp
-/**
- * @file ButtonDriver.cpp
- * @brief ECAL Layer - Push-Button Driver Implementation
- *
- * Implements the non-blocking debounce state machine for a push-button.
- *
- * Debounce logic summary:
- *   • Raw pin read interpreted by configured polarity:
- *       - active-low  => LOW = pressed
- *       - active-high => HIGH = pressed
- *   • While the raw reading matches the accepted state → reset sample counter.
- *   • While differing → increment counter.
- *   • Once counter reaches DEBOUNCE_SAMPLES the new state is accepted:
- *       - Press  edge: record start time via millis().
- *       - Release edge: compute duration, set release flag.
- *
- * Architecture: Lab2 -> ButtonDriver -> GPIO MCAL -> Arduino GPIO Hardware
- */
+// Global LCD driver instance for printf callback
+extern LcdDriver* g_lcdDriver;
 
-#include "ButtonDriver.h"
+#endif // LCDDRIVER_H
 
-ButtonDriver::ButtonDriver(uint8_t pin,
-                                                     bool activeLow,
-                                                     bool useInternalPullup)
-    : _pin(pin),
-            _activeLow(activeLow),
-            _useInternalPullup(useInternalPullup), 
-      _debouncedState(false),
-      _sampleCount(0),
-      _releaseFlag(false),
-      _pressStartMs(0),
-      _lastDurationMs(0)
+DhtSensorDriver.cpp
+#include "DhtSensorDriver.h"
+
+#include <math.h>
+
+#ifndef DHTTYPE
+#define DHTTYPE DHT22
+#endif
+
+DhtSensorDriver::DhtSensorDriver(uint8_t dataPin)
+    : pin(dataPin),
+      dht(dataPin, DHTTYPE)
 {
 }
 
-void ButtonDriver::Init()
+void DhtSensorDriver::Init()
 {
-    pinMode(_pin, _useInternalPullup ? INPUT_PULLUP : INPUT);
-
-    _debouncedState = false;
-    _sampleCount    = 0;
-    _releaseFlag    = false;
-    _pressStartMs   = 0;
-    _lastDurationMs = 0;
+    // DHT data line is idle-high; pull-up helps stable reads in simulation and hardware.
+    pinMode(pin, INPUT_PULLUP);
+    delay(20);
+    dht.begin();
+    delay(1000);
 }
 
-void ButtonDriver::Update()
+bool DhtSensorDriver::Read(float* outTempC, float* outHumidityPct)
 {
-    int rawValue = digitalRead(_pin);               // MCAL: digitalRead
-    bool rawPressed = _activeLow ? (rawValue == LOW) : (rawValue == HIGH);
-
-    if (rawPressed == _debouncedState)
+    if (outTempC == NULL || outHumidityPct == NULL)
     {
-        // Stable – reset the transient counter
-        _sampleCount = 0;
-        return;
+        return false;
     }
 
-    // State differs from accepted value – accumulate samples
-    _sampleCount++;
-
-    if (_sampleCount >= DEBOUNCE_SAMPLES)
+    // Retry a few times because DHT timing may occasionally fail in RTOS context.
+    for (uint8_t attempt = 0; attempt < 3u; ++attempt)
     {
-        _sampleCount = 0;
+        float h = dht.readHumidity(false);
+        float t = dht.readTemperature(false, false);
 
-        bool prevState   = _debouncedState;
-        _debouncedState  = rawPressed;
-
-        if (!prevState && _debouncedState)
+        // If cached/non-forced read fails, trigger one fresh bus transaction.
+        if (isnan(t) || isnan(h))
         {
-            // Rising edge: button just pressed
-            _pressStartMs = millis();              // MCAL: millis()
+            h = dht.readHumidity(true);
+            t = dht.readTemperature(false, true);
         }
-        else if (prevState && !_debouncedState)
+
+        if (!isnan(t) && !isnan(h)
+            && t >= -40.0f && t <= 85.0f
+            && h >= 0.0f && h <= 100.0f)
         {
-            // Falling edge: button just released
-            _lastDurationMs = millis() - _pressStartMs;  // MCAL: millis()
-            _releaseFlag    = true;
+            *outTempC = t;
+            *outHumidityPct = h;
+            return true;
         }
-    }
-}
 
-bool ButtonDriver::IsPressed() const
-{
-    return _debouncedState;
-}
-
-bool ButtonDriver::WasJustReleased()
-{
-    if (_releaseFlag)
-    {
-        _releaseFlag = false;
-        return true;
+        delay(5);
     }
+
     return false;
 }
 
-uint32_t ButtonDriver::GetLastPressDuration() const
+DhtSensorDriver.h
+#ifndef DHT_SENSOR_DRIVER_H
+#define DHT_SENSOR_DRIVER_H
+
+#include <Arduino.h>
+#include <DHT.h>
+
+class DhtSensorDriver
 {
-    return _lastDurationMs;
+private:
+    uint8_t pin;
+    DHT dht;
+
+public:
+    explicit DhtSensorDriver(uint8_t dataPin);
+
+    void Init();
+    bool Read(float* outTempC, float* outHumidityPct);
+};
+
+#endif
+NtcAdcDriver.cpp
+#include "NtcAdcDriver.h"
+#include <math.h>
+
+NtcAdcDriver::NtcAdcDriver(uint8_t pin,
+                           float referenceVoltage,
+                           float betaValue,
+                           float nominalRes,
+                           float nominalTempC,
+                           float seriesRes)
+    : analogPin(pin),
+      vRef(referenceVoltage),
+      beta(betaValue),
+      rNominal(nominalRes),
+      tNominalK(nominalTempC + 273.15f),
+      seriesResistor(seriesRes)
+{
 }
+
+void NtcAdcDriver::Init()
+{
+    pinMode(analogPin, INPUT);
+}
+
+uint16_t NtcAdcDriver::ReadRaw() const
+{
+    return static_cast<uint16_t>(analogRead(analogPin));
+}
+
+float NtcAdcDriver::RawToVoltage(uint16_t raw) const
+{
+    return (static_cast<float>(raw) * vRef) / 1023.0f;
+}
+
+float NtcAdcDriver::RawToTemperatureC(uint16_t raw) const
+{
+    if (raw == 0u)
+    {
+        raw = 1u;
+    }
+    if (raw >= 1023u)
+    {
+        raw = 1022u;
+    }
+
+    const float ratio = (1023.0f / static_cast<float>(raw)) - 1.0f;
+    const float rNtc  = seriesResistor / ratio;
+
+    const float steinhart = (1.0f / tNominalK) + (log(rNtc / rNominal) / beta);
+    const float tempK = 1.0f / steinhart;
+    return tempK - 273.15f;
+}
+
+NtcAdcDriver.h
+#ifndef NTC_ADC_DRIVER_H
+#define NTC_ADC_DRIVER_H
+
+#include <Arduino.h>
+
+class NtcAdcDriver
+{
+private:
+    uint8_t analogPin;
+    float   vRef;
+    float   beta;
+    float   rNominal;
+    float   tNominalK;
+    float   seriesResistor;
+
+public:
+    explicit NtcAdcDriver(uint8_t pin,
+                          float referenceVoltage = 5.0f,
+                          float betaValue = 3950.0f,
+                          float nominalRes = 10000.0f,
+                          float nominalTempC = 25.0f,
+                          float seriesRes = 10000.0f);
+
+    void Init();
+    uint16_t ReadRaw() const;
+    float RawToVoltage(uint16_t raw) const;
+    float RawToTemperatureC(uint16_t raw) const;
+};
+
+#endif
+
+AlertManager.cpp
+#include "AlertManager.h"
+
+AlertManager::AlertManager(uint8_t ledPin)
+    : led(ledPin),
+      active(false)
+{
+}
+
+void AlertManager::Init()
+{
+    led.Init();
+    led.Off();
+    active = false;
+}
+
+bool AlertManager::ApplyState(bool nextState)
+{
+    const bool changed = (nextState != active);
+    active = nextState;
+
+    if (active)
+    {
+        led.On();
+    }
+    else
+    {
+        led.Off();
+    }
+
+    return changed;
+}
+
+bool AlertManager::IsActive() const
+{
+    return active;
+}
+AlertManager.h
+#ifndef LAB3_ALERT_MANAGER_H
+#define LAB3_ALERT_MANAGER_H
+
+#include <Arduino.h>
+#include "../led/LedDriver.h"
+
+class AlertManager
+{
+private:
+    LedDriver led;
+    bool active;
+
+public:
+    explicit AlertManager(uint8_t ledPin);
+
+    void Init();
+    bool ApplyState(bool nextState);
+    bool IsActive() const;
+};
+
+#endif
+	Lab3_main.cpp
+#include "Lab3_main.h"
+#include "Lab3_Shared.h"
+#include "SignalConditioning.h"
+#include "AlertManager.h"
+#include "../sensor/NtcAdcDriver.h"
+#include "../sensor/DhtSensorDriver.h"
+
+#include <Arduino.h>
+#include <stdio.h>
+#include <Arduino_FreeRTOS.h>
+#include <task.h>
+#include <queue.h>
+#include <semphr.h>
+#include <stdlib.h>
+#include <string.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+Lab3Shared g_lab3;
+
+static NtcAdcDriver      s_ntc(LAB3_NTC_PIN);
+static DhtSensorDriver   s_dht(LAB3_DHT_PIN);
+static SignalConditioner s_conditioner;
+static AlertManager      s_alert(LAB3_ALERT_LED_PIN);
+static AlertManager      s_blueAlert(LAB3_BLUE_LED_PIN);
+static LiquidCrystal_I2C s_lcd(LAB3_LCD_I2C_ADDR, 16, 2);
+static FILE s_lcdStream;
+static uint8_t s_lcdCol = 0u;
+static uint8_t s_lcdRow = 0u;
+static ConditioningConfig s_ccfg;
+
+static void taskAcquisition(void *pv);
+static void taskConditioning(void *pv);
+static void taskAlerting(void *pv);
+static void taskDisplay(void *pv);
+static void taskLcdDisplay(void *pv);
+
+static const TickType_t MUTEX_TIMEOUT_TICKS = pdMS_TO_TICKS(20);
+static const TickType_t DHT_MIN_REFRESH_TICKS = pdMS_TO_TICKS(2000);
+
+static const char* sensorSourceName(Lab3SensorSource src)
+{
+    return (src == LAB3_SENSOR_SOURCE_DHT) ? "DHT" : "NTC";
+}
+
+static int lcd_putchar(char c, FILE *stream)
+{
+    (void)stream;
+
+    if (c == '\r')
+    {
+        return 0;
+    }
+
+    if (c == '\n')
+    {
+        s_lcdRow = (uint8_t)((s_lcdRow + 1u) % 2u);
+        s_lcdCol = 0u;
+        s_lcd.setCursor(0, s_lcdRow);
+        return 0;
+    }
+
+    if (s_lcdCol >= 16u)
+    {
+        s_lcdRow = (uint8_t)((s_lcdRow + 1u) % 2u);
+        s_lcdCol = 0u;
+        s_lcd.setCursor(0, s_lcdRow);
+    }
+
+    s_lcd.write(c);
+    s_lcdCol++;
+    return 0;
+}
+
+static void lcd_printf_lines(const char* line1, const char* line2)
+{
+    s_lcd.clear();
+    s_lcdRow = 0u;
+    s_lcdCol = 0u;
+    s_lcd.setCursor(0, 0);
+    fprintf(&s_lcdStream, "%-16.16s\n%-16.16s", line1 ? line1 : "", line2 ? line2 : "");
+}
+
+static bool readLineWithTimeout(char* outBuf, size_t outLen, unsigned long timeoutMs)
+{
+    if (!outBuf || outLen == 0u)
+    {
+        return false;
+    }
+
+    size_t idx = 0u;
+    const unsigned long startMs = millis();
+
+    while ((millis() - startMs) < timeoutMs)
+    {
+        while (Serial.available() > 0)
+        {
+            const int rx = Serial.read();
+            if (rx < 0)
+            {
+                continue;
+            }
+
+            const char c = (char)rx;
+            if (c == '\r' || c == '\n')
+            {
+                if (idx == 0u)
+                {
+                    continue;
+                }
+
+                outBuf[idx] = '\0';
+                return true;
+            }
+
+            if (idx < (outLen - 1u))
+            {
+                outBuf[idx++] = c;
+            }
+        }
+
+        delay(10);
+    }
+
+    outBuf[0] = '\0';
+    return false;
+}
+
+static const char* fmtFloat(float value, uint8_t width, uint8_t precision, char* outBuf)
+{
+    dtostrf(value, width, precision, outBuf);
+    return outBuf;
+}
+
+static uint16_t clampU16(uint16_t value, uint16_t minVal, uint16_t maxVal)
+{
+    if (value < minVal) return minVal;
+    if (value > maxVal) return maxVal;
+    return value;
+}
+
+static void loadDefaultConfig(Lab3Config* cfg)
+{
+    cfg->thresholdC   = LAB3_DEFAULT_THRESHOLD_C;
+    cfg->hysteresisC  = LAB3_DEFAULT_HYSTERESIS_C;
+    cfg->alpha        = LAB3_DEFAULT_ALPHA;
+    cfg->sampleMs     = LAB3_DEFAULT_SAMPLE_MS;
+    cfg->persistenceMs = LAB3_DEFAULT_PERSIST_MS;
+    cfg->reportMs     = LAB3_DEFAULT_REPORT_MS;
+}
+
+static void readConfigFromStdio(Lab3Config* cfg)
+{
+    printf("\\n[Lab3] Enter config: <thresholdC> <hysteresisC> <sampleMs> <persistMs> <reportMs> <alpha>\\n");
+    printf("[Lab3] Example: 25 1 50 100 1000 0.25\\n");
+    printf("[Lab3] Waiting 5s for serial input, then defaults are used.\\n> ");
+
+    float threshold = cfg->thresholdC;
+    float hysteresis = cfg->hysteresisC;
+    int sampleMs = cfg->sampleMs;
+    int persistMs = cfg->persistenceMs;
+    int reportMs = cfg->reportMs;
+    float alpha = cfg->alpha;
+
+    char lineBuf[96];
+    int parsed = 0;
+    if (readLineWithTimeout(lineBuf, sizeof(lineBuf), 5000UL))
+    {
+        parsed = sscanf(lineBuf, "%f %f %d %d %d %f", &threshold, &hysteresis, &sampleMs, &persistMs, &reportMs, &alpha);
+    }
+
+    if (parsed == 6)
+    {
+        cfg->thresholdC = threshold;
+        cfg->hysteresisC = (hysteresis < 0.1f) ? 0.1f : hysteresis;
+        cfg->alpha = alpha;
+        if (cfg->alpha < 0.01f) cfg->alpha = 0.01f;
+        if (cfg->alpha > 1.0f) cfg->alpha = 1.0f;
+        cfg->sampleMs = clampU16((uint16_t)sampleMs, LAB3_MIN_SAMPLE_MS, LAB3_MAX_SAMPLE_MS);
+        cfg->persistenceMs = (persistMs < (int)cfg->sampleMs) ? cfg->sampleMs : (uint16_t)persistMs;
+        cfg->reportMs = clampU16((uint16_t)reportMs, LAB3_MIN_REPORT_MS, LAB3_MAX_REPORT_MS);
+        printf("[Lab3] Custom config accepted.\\n");
+    }
+    else
+    {
+        printf("[Lab3] Using default config (no/invalid input).\\n");
+    }
+}
+
+void lab3_setup()
+{
+    loadDefaultConfig(&g_lab3.config);
+    readConfigFromStdio(&g_lab3.config);
+
+    s_ntc.Init();
+    s_dht.Init();
+    s_alert.Init();
+    s_blueAlert.Init();
+    Wire.begin();
+    s_lcd.init();
+    s_lcd.backlight();
+    fdev_setup_stream(&s_lcdStream, lcd_putchar, NULL, _FDEV_SETUP_WRITE);
+    lcd_printf_lines("Lab3 Starting", "Please wait...");
+
+    s_ccfg.thresholdC = g_lab3.config.thresholdC;
+    s_ccfg.hysteresisC = g_lab3.config.hysteresisC;
+    s_ccfg.alpha = g_lab3.config.alpha;
+    s_ccfg.minTempC = -40.0f;
+    s_ccfg.maxTempC = 125.0f;
+
+    uint16_t persistenceSamples = g_lab3.config.persistenceMs / g_lab3.config.sampleMs;
+    if (persistenceSamples == 0u)
+    {
+        persistenceSamples = 1u;
+    }
+    s_ccfg.persistenceSamples = persistenceSamples;
+
+    s_conditioner.Configure(s_ccfg);
+
+    g_lab3.rawQueue = xQueueCreate(1, sizeof(Lab3RawSample));
+    g_lab3.alertSignal = xSemaphoreCreateBinary();
+    g_lab3.stateMutex = xSemaphoreCreateMutex();
+    g_lab3.ioMutex = xSemaphoreCreateMutex();
+
+    if (!g_lab3.rawQueue || !g_lab3.alertSignal || !g_lab3.stateMutex || !g_lab3.ioMutex)
+    {
+        printf("[Lab3] FATAL: RTOS object creation failed.\\n");
+        for (;;) { }
+    }
+
+    g_lab3.state.sampleIndex = 0;
+    g_lab3.state.alertTransitions = 0;
+    g_lab3.state.persistenceSamples = persistenceSamples;
+    g_lab3.state.alertLedState = false;
+    g_lab3.state.dhtTempC = 0.0f;
+    g_lab3.state.dhtHumidityPct = 0.0f;
+    g_lab3.state.dhtDataValid = false;
+    g_lab3.state.sensorDataValid = false;
+    g_lab3.state.requestedSource = LAB3_SENSOR_SOURCE_NTC;
+    g_lab3.state.activeSource = LAB3_SENSOR_SOURCE_NTC;
+
+    if (xSemaphoreTake(g_lab3.ioMutex, portMAX_DELAY) == pdTRUE)
+    {
+            char thrBuf[16], hystBuf[16], alphaBuf[16];
+        printf("[Lab3] FreeRTOS sensor pipeline start\\n");
+            printf("[Lab3] cfg: thr=%sC hyst=%sC sample=%ums persist=%ums(%u samples) report=%ums alpha=%s\n",
+             fmtFloat(g_lab3.config.thresholdC, 0, 2, thrBuf),
+             fmtFloat(g_lab3.config.hysteresisC, 0, 2, hystBuf),
+               g_lab3.config.sampleMs,
+               g_lab3.config.persistenceMs,
+               persistenceSamples,
+               g_lab3.config.reportMs,
+             fmtFloat(g_lab3.config.alpha, 0, 2, alphaBuf));
+                printf("[Lab3] LCD mode: row1=NTC, row2=DHT22\n");
+        xSemaphoreGive(g_lab3.ioMutex);
+    }
+
+    BaseType_t ok;
+    ok = xTaskCreate(taskAcquisition, "L3_Acq", 512, (void*)0, 3, (TaskHandle_t*)0);
+    if (ok != pdPASS) { printf("[Lab3] FAIL: taskAcquisition\\n"); for(;;){} }
+
+    ok = xTaskCreate(taskConditioning, "L3_Cond", 320, (void*)0, 2, (TaskHandle_t*)0);
+    if (ok != pdPASS) { printf("[Lab3] FAIL: taskConditioning\\n"); for(;;){} }
+
+    ok = xTaskCreate(taskAlerting, "L3_Alert", 256, (void*)0, 2, (TaskHandle_t*)0);
+    if (ok != pdPASS) { printf("[Lab3] FAIL: taskAlerting\\n"); for(;;){} }
+
+    ok = xTaskCreate(taskDisplay, "L3_Disp", 768, (void*)0, 1, (TaskHandle_t*)0);
+    if (ok != pdPASS) { printf("[Lab3] FAIL: taskDisplay\\n"); for(;;){} }
+
+    ok = xTaskCreate(taskLcdDisplay, "L3_LCD", 512, (void*)0, 1, (TaskHandle_t*)0);
+    if (ok != pdPASS) { printf("[Lab3] FAIL: taskLcdDisplay\\n"); for(;;){} }
+
+    // Source auto-switch is disabled in dual-row LCD mode.
+}
+
+void lab3_loop()
+{
+}
+
+static void taskAcquisition(void *pv)
+{
+    (void)pv;
+    TickType_t lastWake = xTaskGetTickCount();
+
+    for (;;)
+    {
+        Lab3RawSample sample;
+        sample.source = LAB3_SENSOR_SOURCE_NTC;
+        sample.humidityPct = 0.0f;
+        sample.valid = true;
+        sample.adcRaw = s_ntc.ReadRaw();
+        sample.voltage = s_ntc.RawToVoltage(sample.adcRaw);
+        sample.tempC = s_ntc.RawToTemperatureC(sample.adcRaw);
+
+        sample.timestamp = xTaskGetTickCount();
+
+        xQueueOverwrite(g_lab3.rawQueue, &sample);
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(g_lab3.config.sampleMs));
+    }
+}
+
+static void taskConditioning(void *pv)
+{
+    (void)pv;
+    TickType_t lastWake = xTaskGetTickCount();
+    Lab3SensorSource lastSource = LAB3_SENSOR_SOURCE_NTC;
+
+    for (;;)
+    {
+        Lab3RawSample sample;
+        if (xQueueReceive(g_lab3.rawQueue, &sample, 0) == pdTRUE)
+        {
+            if (sample.source != lastSource)
+            {
+                s_conditioner.Configure(s_ccfg);
+                lastSource = sample.source;
+            }
+
+            if (xSemaphoreTake(g_lab3.stateMutex, MUTEX_TIMEOUT_TICKS) == pdTRUE)
+            {
+                g_lab3.state.sampleIndex++;
+                g_lab3.state.rawAdc = sample.adcRaw;
+                g_lab3.state.rawVoltage = sample.voltage;
+                g_lab3.state.rawTempC = sample.tempC;
+                g_lab3.state.rawHumidityPct = sample.humidityPct;
+                g_lab3.state.sensorDataValid = sample.valid;
+                g_lab3.state.activeSource = sample.source;
+                g_lab3.state.timestamp = sample.timestamp;
+
+                if (sample.valid)
+                {
+                    ConditioningResult c = s_conditioner.Process(sample.tempC);
+                    g_lab3.state.clampedTempC = c.clampedTempC;
+                    g_lab3.state.filteredTempC = c.filteredTempC;
+                    g_lab3.state.hysteresisCandidate = c.hysteresisCandidate;
+                    g_lab3.state.debouncedAlert = c.debouncedAlert;
+                    g_lab3.state.persistenceCounter = c.pendingCount;
+                }
+                xSemaphoreGive(g_lab3.stateMutex);
+            }
+
+            if (sample.valid)
+            {
+                xSemaphoreGive(g_lab3.alertSignal);
+            }
+        }
+
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(LAB3_CONDITION_TASK_MS));
+    }
+}
+
+static void taskAlerting(void *pv)
+{
+    (void)pv;
+    TickType_t lastWake = xTaskGetTickCount();
+    static TickType_t redLastBlinkTick = 0;
+    static bool redBlinkState = false;
+    static TickType_t blueLastBlinkTick = 0;
+    static bool blueBlinkState = false;
+
+    for (;;)
+    {
+        float ntcTemp = 0.0f;
+        bool ntcValid = false;
+        float dhtTemp = 0.0f;
+        bool dhtValid = false;
+
+        if (xSemaphoreTake(g_lab3.stateMutex, MUTEX_TIMEOUT_TICKS) == pdTRUE)
+        {
+            ntcTemp = g_lab3.state.filteredTempC;
+            ntcValid = g_lab3.state.sensorDataValid;
+            dhtTemp = g_lab3.state.dhtTempC;
+            dhtValid = g_lab3.state.dhtDataValid;
+            xSemaphoreGive(g_lab3.stateMutex);
+        }
+
+        bool desiredRedLedState = false;
+
+        if (!ntcValid)
+        {
+            redBlinkState = false;
+            desiredRedLedState = false;
+        }
+        else if (ntcTemp >= LAB3_LED_BLINK_C)
+        {
+            TickType_t now = xTaskGetTickCount();
+            if ((now - redLastBlinkTick) >= pdMS_TO_TICKS(LAB3_LED_BLINK_MS))
+            {
+                redBlinkState = !redBlinkState;
+                redLastBlinkTick = now;
+            }
+            desiredRedLedState = redBlinkState;
+        }
+        else if (ntcTemp >= LAB3_LED_ON_C)
+        {
+            redBlinkState = true;
+            desiredRedLedState = true;
+        }
+        else
+        {
+            redBlinkState = false;
+            desiredRedLedState = false;
+        }
+
+        s_alert.ApplyState(desiredRedLedState);
+
+        bool desiredLedState = false;
+
+        if (!dhtValid)
+        {
+            blueBlinkState = false;
+            desiredLedState = false;
+        }
+        else if (dhtTemp >= LAB3_LED_BLINK_C)
+        {
+            TickType_t now = xTaskGetTickCount();
+            if ((now - blueLastBlinkTick) >= pdMS_TO_TICKS(LAB3_LED_BLINK_MS))
+            {
+                blueBlinkState = !blueBlinkState;
+                blueLastBlinkTick = now;
+            }
+            desiredLedState = blueBlinkState;
+        }
+        else if (dhtTemp >= LAB3_LED_ON_C)
+        {
+            blueBlinkState = true;
+            desiredLedState = true;
+        }
+        else
+        {
+            blueBlinkState = false;
+            desiredLedState = false;
+        }
+
+        const bool prevLedState = s_blueAlert.IsActive();
+        s_blueAlert.ApplyState(desiredLedState);
+
+        if (xSemaphoreTake(g_lab3.stateMutex, MUTEX_TIMEOUT_TICKS) == pdTRUE)
+        {
+            g_lab3.state.alertLedState = s_blueAlert.IsActive();
+            if (prevLedState != g_lab3.state.alertLedState)
+            {
+                g_lab3.state.alertTransitions++;
+            }
+            xSemaphoreGive(g_lab3.stateMutex);
+        }
+
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(LAB3_ALERT_TASK_MS));
+    }
+}
+
+static void taskDisplay(void *pv)
+{
+    (void)pv;
+    TickType_t lastWake = xTaskGetTickCount();
+
+    for (;;)
+    {
+        Lab3RuntimeState snap;
+
+        if (xSemaphoreTake(g_lab3.stateMutex, MUTEX_TIMEOUT_TICKS) == pdTRUE)
+        {
+            snap = g_lab3.state;
+            xSemaphoreGive(g_lab3.stateMutex);
+        }
+        else
+        {
+            vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(g_lab3.config.reportMs));
+            continue;
+        }
+
+        if (xSemaphoreTake(g_lab3.ioMutex, MUTEX_TIMEOUT_TICKS) == pdTRUE)
+        {
+               char plotRawBuf[16], plotFiltBuf[16], plotHighBuf[16], plotLowBuf[16], plotAdcBuf[16];
+               char filtViewBuf[16], rawViewBuf[16], clampViewBuf[16], humViewBuf[16];
+             const char* ledMode = (!snap.dhtDataValid) ? "OFF" : ((snap.dhtTempC >= LAB3_LED_BLINK_C) ? "BLINK" : ((snap.dhtTempC >= LAB3_LED_ON_C) ? "ON" : "OFF"));
+               const char* stateName = snap.debouncedAlert ? "ALERT" : "NORMAL";
+               const char* srcName = sensorSourceName(snap.activeSource);
+               const char* validName = snap.sensorDataValid ? "OK" : "WAIT";
+
+             const float highThreshold = g_lab3.config.thresholdC + g_lab3.config.hysteresisC;
+             const float lowThreshold = g_lab3.config.thresholdC - g_lab3.config.hysteresisC;
+
+                  printf("[L3] i=%lu src=%s v=%s raw=%sC hum=%s%% clamp=%sC filt=%sC st=%s mode=%s led=%u p=%u/%u tr=%lu\r\n",
+                      (unsigned long)snap.sampleIndex,
+                      srcName,
+                      validName,
+                      fmtFloat(snap.rawTempC, 0, 2, rawViewBuf),
+                      fmtFloat(snap.rawHumidityPct, 0, 1, humViewBuf),
+                      fmtFloat(snap.clampedTempC, 0, 2, clampViewBuf),
+                      fmtFloat(snap.filteredTempC, 0, 2, filtViewBuf),
+                      stateName,
+                      ledMode,
+                      snap.alertLedState ? 1u : 0u,
+                      snap.persistenceCounter,
+                      snap.persistenceSamples,
+                      (unsigned long)snap.alertTransitions);
+
+                         printf("PLOT,%s,%s,%s,%s,%s,%s,%u\n",
+                 fmtFloat(snap.rawTempC, 0, 3, plotRawBuf),
+                 fmtFloat(snap.filteredTempC, 0, 3, plotFiltBuf),
+                 fmtFloat(highThreshold, 0, 3, plotHighBuf),
+                 fmtFloat(lowThreshold, 0, 3, plotLowBuf),
+                 fmtFloat((float)snap.rawAdc, 0, 3, plotAdcBuf),
+                     fmtFloat(snap.rawHumidityPct, 0, 3, humViewBuf),
+                                 snap.alertLedState ? 1u : 0u);
+
+            xSemaphoreGive(g_lab3.ioMutex);
+        }
+
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(g_lab3.config.reportMs));
+    }
+}
+
+static void taskLcdDisplay(void *pv)
+{
+    (void)pv;
+    TickType_t lastWake = xTaskGetTickCount();
+    TickType_t lastDhtReadTick = 0;
+    float dhtTempC = 0.0f;
+    float dhtHumidity = 0.0f;
+    bool dhtValid = false;
+
+    for (;;)
+    {
+        const TickType_t nowTick = xTaskGetTickCount();
+        if ((nowTick - lastDhtReadTick) >= DHT_MIN_REFRESH_TICKS)
+        {
+            float t = 0.0f;
+            float h = 0.0f;
+            dhtValid = s_dht.Read(&t, &h);
+            if (dhtValid)
+            {
+                dhtTempC = t;
+                dhtHumidity = h;
+            }
+            lastDhtReadTick = nowTick;
+
+            if (xSemaphoreTake(g_lab3.stateMutex, MUTEX_TIMEOUT_TICKS) == pdTRUE)
+            {
+                g_lab3.state.dhtDataValid = dhtValid;
+                if (dhtValid)
+                {
+                    g_lab3.state.dhtTempC = dhtTempC;
+                    g_lab3.state.dhtHumidityPct = dhtHumidity;
+                }
+                xSemaphoreGive(g_lab3.stateMutex);
+            }
+        }
+
+        Lab3RuntimeState snap;
+        if (xSemaphoreTake(g_lab3.stateMutex, MUTEX_TIMEOUT_TICKS) == pdTRUE)
+        {
+            snap = g_lab3.state;
+            xSemaphoreGive(g_lab3.stateMutex);
+        }
+        else
+        {
+            vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(LAB3_LCD_TASK_MS));
+            continue;
+        }
+
+        {
+            char line1[17] = {0};
+            char line2[17] = {0};
+            char ntcBuf[8] = {0};
+            char dhtTBuf[8] = {0};
+            char dhtHBuf[8] = {0};
+            const char* mode = "OFF";
+
+            if (snap.dhtDataValid && snap.dhtTempC >= LAB3_LED_BLINK_C)
+            {
+                mode = "BLINK";
+            }
+            else if (snap.dhtDataValid && snap.dhtTempC >= LAB3_LED_ON_C)
+            {
+                mode = "ON";
+            }
+
+            snprintf(line1, sizeof(line1), "NTC %s T:%s", mode, fmtFloat(snap.filteredTempC, 0, 1, ntcBuf));
+
+            if (dhtValid)
+            {
+                snprintf(line2, sizeof(line2), "DHT T:%s H:%s", fmtFloat(dhtTempC, 0, 1, dhtTBuf), fmtFloat(dhtHumidity, 0, 0, dhtHBuf));
+            }
+            else
+            {
+                snprintf(line2, sizeof(line2), "DHT WAITING...");
+            }
+
+            lcd_printf_lines(line1, line2);
+        }
+
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(LAB3_LCD_TASK_MS));
+    }
+}
+
+Lab3_main.h 
+#ifndef LAB3_MAIN_H
+#define LAB3_MAIN_H
+
+void lab3_setup();
+void lab3_loop();
+
+#endif
+Lab3_Shared.h
+#ifndef LAB3_SHARED_H
+#define LAB3_SHARED_H
+
+#include <Arduino.h>
+#include <Arduino_FreeRTOS.h>
+#include <queue.h>
+#include <semphr.h>
+
+#define LAB3_NTC_PIN             A0
+#define LAB3_DHT_PIN             7
+#define LAB3_ALERT_LED_PIN       13
+#define LAB3_BLUE_LED_PIN        12
+
+#define LAB3_LCD_I2C_ADDR        0x27
+
+#define LAB3_DEFAULT_SAMPLE_MS      50u
+#define LAB3_DEFAULT_REPORT_MS      1000u
+#define LAB3_DEFAULT_PERSIST_MS     100u
+#define LAB3_DEFAULT_THRESHOLD_C    25.0f
+#define LAB3_DEFAULT_HYSTERESIS_C   1.0f
+#define LAB3_DEFAULT_ALPHA          0.25f
+
+#define LAB3_LED_ON_C               25.0f
+#define LAB3_LED_BLINK_C            30.0f
+#define LAB3_LED_BLINK_MS           300u
+
+#define LAB3_CONDITION_TASK_MS      50u
+#define LAB3_ALERT_TASK_MS          50u
+#define LAB3_LCD_TASK_MS            500u
+#define LAB3_DHT_SAMPLE_UNITS       5u
+#define LAB3_SOURCE_SWITCH_MS       20000u
+
+#define LAB3_MIN_SAMPLE_MS          20u
+#define LAB3_MAX_SAMPLE_MS          100u
+#define LAB3_MIN_REPORT_MS          200u
+#define LAB3_MAX_REPORT_MS          2000u
+
+typedef enum
+{
+    LAB3_SENSOR_SOURCE_NTC = 0,
+    LAB3_SENSOR_SOURCE_DHT = 1
+} Lab3SensorSource;
+
+typedef struct
+{
+    uint16_t adcRaw;
+    float voltage;
+    float tempC;
+    float humidityPct;
+    bool valid;
+    Lab3SensorSource source;
+    TickType_t timestamp;
+} Lab3RawSample;
+
+typedef struct
+{
+    float thresholdC;
+    float hysteresisC;
+    float alpha;
+    uint16_t sampleMs;
+    uint16_t persistenceMs;
+    uint16_t reportMs;
+} Lab3Config;
+
+typedef struct
+{
+    uint32_t sampleIndex;
+    uint16_t rawAdc;
+    float rawVoltage;
+    float rawTempC;
+    float rawHumidityPct;
+    float dhtTempC;
+    float dhtHumidityPct;
+    bool dhtDataValid;
+    bool sensorDataValid;
+    Lab3SensorSource requestedSource;
+    Lab3SensorSource activeSource;
+    float clampedTempC;
+    float filteredTempC;
+    bool hysteresisCandidate;
+    bool debouncedAlert;
+    bool alertLedState;
+    uint16_t persistenceCounter;
+    uint16_t persistenceSamples;
+    uint32_t alertTransitions;
+    TickType_t timestamp;
+} Lab3RuntimeState;
+
+typedef struct
+{
+    QueueHandle_t rawQueue;
+    SemaphoreHandle_t alertSignal;
+    SemaphoreHandle_t stateMutex;
+    SemaphoreHandle_t ioMutex;
+    Lab3Config config;
+    Lab3RuntimeState state;
+} Lab3Shared;
+
+extern Lab3Shared g_lab3;
+
+#endif
+
+
+SignalConditioning.cpp
+#include "SignalConditioning.h"
+
+SignalConditioner::SignalConditioner()
+    : filterInitialized(false),
+      filtered(0.0f),
+      hysteresisState(false),
+      debouncedState(false),
+      pendingTransitions(0u)
+{
+    cfg.thresholdC = 25.0f;
+    cfg.hysteresisC = 1.0f;
+    cfg.alpha = 0.25f;
+    cfg.minTempC = -40.0f;
+    cfg.maxTempC = 125.0f;
+    cfg.persistenceSamples = 2u;
+}
+
+void SignalConditioner::Configure(const ConditioningConfig& config)
+{
+    cfg = config;
+    if (cfg.alpha < 0.01f)
+    {
+        cfg.alpha = 0.01f;
+    }
+    if (cfg.alpha > 1.0f)
+    {
+        cfg.alpha = 1.0f;
+    }
+    if (cfg.persistenceSamples == 0u)
+    {
+        cfg.persistenceSamples = 1u;
+    }
+
+    filterInitialized = false;
+    filtered = 0.0f;
+    hysteresisState = false;
+    debouncedState = false;
+    pendingTransitions = 0u;
+}
+
+ConditioningResult SignalConditioner::Process(float measuredTempC)
+{
+    ConditioningResult result{};
+
+    if (measuredTempC < cfg.minTempC)
+    {
+        result.clampedTempC = cfg.minTempC;
+    }
+    else if (measuredTempC > cfg.maxTempC)
+    {
+        result.clampedTempC = cfg.maxTempC;
+    }
+    else
+    {
+        result.clampedTempC = measuredTempC;
+    }
+
+    if (!filterInitialized)
+    {
+        filtered = result.clampedTempC;
+        filterInitialized = true;
+    }
+    else
+    {
+        filtered = (cfg.alpha * result.clampedTempC) + ((1.0f - cfg.alpha) * filtered);
+    }
+    result.filteredTempC = filtered;
+
+    const float high = cfg.thresholdC + cfg.hysteresisC;
+    const float low  = cfg.thresholdC - cfg.hysteresisC;
+
+    if (hysteresisState)
+    {
+        if (filtered <= low)
+        {
+            hysteresisState = false;
+        }
+    }
+    else
+    {
+        if (filtered >= high)
+        {
+            hysteresisState = true;
+        }
+    }
+
+    result.hysteresisCandidate = hysteresisState;
+
+    if (result.hysteresisCandidate != debouncedState)
+    {
+        pendingTransitions++;
+        if (pendingTransitions >= cfg.persistenceSamples)
+        {
+            debouncedState = result.hysteresisCandidate;
+            result.stateChanged = true;
+            pendingTransitions = 0u;
+        }
+    }
+    else
+    {
+        pendingTransitions = 0u;
+        result.stateChanged = false;
+    }
+
+    result.debouncedAlert = debouncedState;
+    result.pendingCount = pendingTransitions;
+    return result;
+}
+
+SignalConditioning.h
+#ifndef LAB3_SIGNAL_CONDITIONING_H
+#define LAB3_SIGNAL_CONDITIONING_H
+
+#include <Arduino.h>
+
+struct ConditioningConfig
+{
+    float thresholdC;
+    float hysteresisC;
+    float alpha;
+    float minTempC;
+    float maxTempC;
+    uint16_t persistenceSamples;
+};
+
+struct ConditioningResult
+{
+    float clampedTempC;
+    float filteredTempC;
+    bool hysteresisCandidate;
+    bool debouncedAlert;
+    uint16_t pendingCount;
+    bool stateChanged;
+};
+
+class SignalConditioner
+{
+private:
+    ConditioningConfig cfg;
+    bool filterInitialized;
+    float filtered;
+    bool hysteresisState;
+    bool debouncedState;
+    uint16_t pendingTransitions;
+
+public:
+    SignalConditioner();
+    void Configure(const ConditioningConfig& config);
+    ConditioningResult Process(float measuredTempC);
+};
+
+#endif
 
 main.cpp
 /**
@@ -689,8 +1566,8 @@ main.cpp
 // ============================================================================
 // CONFIGURATION – change this value to select a lab
 // ============================================================================
-//   1  = Lab 1.1   12 = Lab 1.2   2 = Lab 2   22 = Lab 2.2 (FreeRTOS, C)
-#define SELECTED_LAB 22
+//   1  = Lab 1.1   12 = Lab 1.2   2 = Lab 2   22 = Lab 2.2 (FreeRTOS, C)   3 = Lab 3
+#define SELECTED_LAB 3
 // ============================================================================
 
 // ============================================================================
@@ -768,6 +1645,23 @@ static int uart_putchar(char c, FILE *stream)
     return 0;
 }
 
+static int uart_getchar(FILE *stream)
+{
+    while (!Serial.available()) {}
+    return Serial.read();
+}
+
+static void serial_stdio_init(unsigned long baudRate)
+{
+    Serial.begin(baudRate);
+    unsigned long startMs = millis();
+    while (!Serial && (millis() - startMs < 1500UL)) {}
+
+    fdev_setup_stream(&uart_stream, uart_putchar, uart_getchar, _FDEV_SETUP_RW);
+    stdout = &uart_stream;
+    stdin  = &uart_stream;
+}
+
 // ============================================================================
 // Lab includes
 // ============================================================================
@@ -790,6 +1684,10 @@ static int uart_putchar(char c, FILE *stream)
     #include "Lab2_2/Lab2_2_main.h"
 #endif
 
+#if SELECTED_LAB == 3
+    #include "Lab3/Lab3_main.h"
+#endif
+
 // ============================================================================
 // Arduino entry points
 // ============================================================================
@@ -799,14 +1697,14 @@ void setup()
     wdt_disable();
 
 #if SELECTED_LAB == 22
-    Serial.begin(9600);
-    while (!Serial) { ; }
-
-    /* Redirect stdout to UART so printf() works */
-    fdev_setup_stream(&uart_stream, uart_putchar, NULL, _FDEV_SETUP_WRITE);
-    stdout = &uart_stream;
+    serial_stdio_init(9600);
 
     printf("[main] === Lab 2.2 starting ===\n");
+#endif
+
+#if SELECTED_LAB == 3
+    serial_stdio_init(9600);
+    printf("[main] === Lab 3 starting ===\n");
 #endif
 
 #if SELECTED_LAB == 1
@@ -817,6 +1715,8 @@ void setup()
     lab2_setup();
 #elif SELECTED_LAB == 22
     lab2_2_setup();
+#elif SELECTED_LAB == 3
+    lab3_setup();
 #endif
 }
 
@@ -830,22 +1730,24 @@ void loop()
     lab2_loop();
 #elif SELECTED_LAB == 22
     lab2_2_loop();
+#elif SELECTED_LAB == 3
+    lab3_loop();
 #endif
 }
-
 
 SerialStdioDriver.cpp
 /**
  * @file SerialStdioDriver.cpp
  * @brief ECAL Layer - Serial/LCD/Keypad Driver Implementation
- * 
- * Implements STDIO redirection for both serial and hardware (LCD/Keypad) I/O.
+ *
+ * Provides simple Serial I/O wrappers and LCD/Keypad I/O redirection.
  * Uses Arduino MCAL hardware drivers through LcdDriver and KeypadDriver.
- * 
+ *
  * Features:
- * - SerialStdioInit(): Redirects printf() to serial, scanf() from serial
+ * - SerialStdioInit(): Initialises UART via Serial.begin()
+ * - SerialReadLine(): Reads a newline-terminated line from Serial
  * - StdioInit(): Redirects printf() to LCD, scanf() from Keypad
- * 
+ *
  * Architecture: Lab -> StdioDriver -> UART or LCD/Keypad -> MCAL -> Hardware
  */
 
@@ -859,70 +1761,81 @@ extern LcdDriver* g_lcdDriver;
 extern KeypadDriver* g_keypadDriver;
 
 // ============================================================================
-// SERIAL-BASED STDIO FUNCTIONS (for serial communication)
+// SERIAL-BASED I/O FUNCTIONS (for serial communication)
 // ============================================================================
 
+// ============================================================================
+// Static FILE streams for UART stdio redirection
+// ============================================================================
+
+static FILE UartStdOut;
+
 /**
- * @brief Callback function for printf redirection to Serial
- * 
- * This function is called by printf() to output each character.
- * It uses the Arduino MCAL Serial.write() to send to UART.
- * 
- * @param c Character to write
- * @param stream FILE stream (unused)
- * @return 0 on success
+ * @brief Callback: write one character to the UART (used by printf)
  */
-static int SerialPutChar(char c, FILE *stream)
+static int UartPutChar(char c, FILE *stream)
 {
-    Serial.write(c);  // MCAL: Write to Arduino serial
+    Serial.write(c);
     return 0;
 }
 
 /**
- * @brief Callback function for scanf redirection from Serial
- * 
- * This function is called by scanf() to read each character.
- * It uses the Arduino MCAL Serial.read() to receive from UART.
- * Blocks until data is available on the serial port.
- * 
- * @param stream FILE stream (unused)
- * @return Character read from serial
+ * @brief Callback: read one character from the UART (used by scanf)
+ *        Blocks until a byte is available.
  */
-static int SerialGetChar(FILE *stream)
+static int UartGetChar(FILE *stream)
 {
-    // Block until data available on serial port
     while (!Serial.available()) {}
-    // Read and return one byte from UART
-    return Serial.read();  // MCAL: Read from Arduino serial
+    return Serial.read();
 }
 
-// Static FILE structures for serial redirection
-static FILE SerialStdOut;
-static FILE SerialStdIn;
-
 /**
- * @brief Initialize STDIO redirection to Serial port
- * 
- * Sets up:
- * - Arduino UART communication at specified baud rate
- * - Redirects stdout to serial port for printf() support
- * - Redirects stdin to serial port for scanf() support
- * 
+ * @brief Initialize the Serial port and redirect printf/scanf to UART
+ *
+ * Opens the UART at the requested baud rate, waits until the
+ * host-side serial monitor has connected, then hooks stdout/stdin
+ * to the UART so that printf() and scanf() work over serial.
+ *
  * @param baudRate Baud rate (e.g., 9600)
  */
 void SerialStdioInit(unsigned long baudRate)
 {
-    // Initialize UART at specified baud rate
-    Serial.begin(baudRate);         // MCAL: Initialize serial
-    while (!Serial) {}              // Wait for serial connection
+    Serial.begin(baudRate);   // MCAL: Initialize serial
 
-    // Redirect stdout (printf) to serial port
-    fdev_setup_stream(&SerialStdOut, SerialPutChar, NULL, _FDEV_SETUP_WRITE);
-    stdout = &SerialStdOut;         // All printf() calls now go to serial
+    unsigned long startMs = millis();
+    while (!Serial && (millis() - startMs < 1500UL)) {}
 
-    // Redirect stdin (scanf) to serial port
-    fdev_setup_stream(&SerialStdIn, NULL, SerialGetChar, _FDEV_SETUP_READ);
-    stdin = &SerialStdIn;           // All scanf() calls now read from serial
+    // Redirect printf (stdout) and scanf (stdin) to UART
+    fdev_setup_stream(&UartStdOut, UartPutChar, UartGetChar, _FDEV_SETUP_RW);
+    stdout = &UartStdOut;
+    stdin  = &UartStdOut;
+}
+
+/**
+ * @brief Read one line from Serial into a caller-supplied buffer
+ *
+ * Blocks until a newline (\\n) or carriage-return (\\r) is received,
+ * or until maxLen-1 characters have been stored.  The terminating
+ * newline/carriage-return is NOT stored.  The buffer is always
+ * null-terminated.
+ *
+ * @param buf     Destination buffer
+ * @param maxLen  Size of buf (including space for the null terminator)
+ */
+void SerialReadLine(char* buf, int maxLen)
+{
+    int index = 0;
+    while (index < maxLen - 1)
+    {
+        while (!Serial.available()) {}       // block until a byte arrives
+        char c = static_cast<char>(Serial.read());
+        if (c == '\n' || c == '\r')
+        {
+            break;                           // end of line
+        }
+        buf[index++] = c;
+    }
+    buf[index] = '\0';
 }
 
 // ============================================================================
@@ -995,23 +1908,28 @@ void StdioInit()
     stdin = &KeypadStdIn;        // All scanf() calls now read from keypad
 }
 
-}
 
-	SerialStdioDriver.h
+SerialStdioDriver.h
 /**
  * @file SerialStdioDriver.h
- * @brief ECAL Layer - STDIO Abstraction (Serial/LCD/Keypad)
- * 
- * Provides interfaces for standard I/O redirection.
- * Supports both serial-based and hardware-based (LCD/Keypad) I/O.
- * 
+ * @brief ECAL Layer - Serial/LCD/Keypad I/O Abstraction
+ *
+ * Provides interfaces for Serial I/O (using Arduino Serial.print / Serial.read)
+ * and for hardware-based (LCD/Keypad) I/O.
+ *
  * Features:
- * - SerialStdioInit(): Redirect printf/scanf to serial port
+ * - SerialStdioInit(): Open UART via Serial.begin()
+ * - SerialReadLine(): Read a newline-terminated line from the serial monitor
  * - StdioInit(): Redirect printf to LCD, scanf to Keypad
- * 
- * Usage:
- *   SerialStdioInit(9600);  // For serial-based labs (printf/scanf to UART)
- *   StdioInit();            // For LCD/Keypad labs (printf to LCD, scanf to Keypad)
+ *
+ * Usage (serial labs):
+ *   SerialStdioInit(9600);
+ *   Serial.print("Hello");
+ *   char buf[64];
+ *   SerialReadLine(buf, sizeof(buf));
+ *
+ * Usage (LCD/Keypad lab):
+ *   StdioInit();   // after lcd.Init() and keypad.Init()
  */
 
 #ifndef SerialStdioDriver_H
@@ -1020,355 +1938,86 @@ void StdioInit()
 #include <Arduino.h>
 
 /**
- * @brief Initialize STDIO redirection to Serial port (UART)
- * 
- * Sets up UART at specified baud rate and redirects stdout/stdin to serial port.
- * This allows printf() to output to the serial monitor and scanf() to read from it.
- * 
+ * @brief Initialise the Serial port
+ *
+ * Opens UART at the specified baud rate and waits for a host connection.
+ *
  * @param baudRate Baud rate (typically 9600)
  */
 void SerialStdioInit(unsigned long baudRate);
 
 /**
+ * @brief Read one newline-terminated line from the Serial monitor
+ *
+ * Blocks until '\\n' or '\\r' is received (or buf is full).
+ * The line terminator is not stored.  The buffer is always null-terminated.
+ *
+ * @param buf     Destination buffer
+ * @param maxLen  Size of buf (including null terminator)
+ */
+void SerialReadLine(char* buf, int maxLen);
+
+/**
  * @brief Initialize STDIO redirection to LCD and Keypad
- * 
+ *
  * Redirects stdout (printf) to LCD display and stdin (scanf) to Keypad input.
- * This allows printf() to output to the LCD and scanf() to read from the keypad.
- * 
+ *
  * Note: Must call lcd.Init() and keypad.Init() before calling this function.
  */
 void StdioInit();
 
 #endif
 
-	MeasurementTask.h
-/**
- * @file MeasurementTask.h
- * @brief Pure-C header for button measurement FreeRTOS task
- */
+diagram.json
 
-#ifndef MEASUREMENT_TASK_H
-#define MEASUREMENT_TASK_H
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-void TaskMeasurement(void *pv);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* MEASUREMENT_TASK_H */
-
-	MeasurementTask.c
-/**
- * @file MeasurementTask.c
- * @brief Pure-C FreeRTOS task – polls button, debounces, signals press events
- */
-
-#include "MeasurementTask.h"
-#include "Lab2_2_Shared.h"
-#include "avr_helpers.h"
-
-#include <stdio.h>
-#include <Arduino_FreeRTOS.h>
-#include <task.h>
-#include <queue.h>
-
-void TaskMeasurement(void *pv)
 {
-    (void)pv;
-
-    uint8_t  stablePressed = 0;
-    uint8_t  matchCount    = 0;
-    unsigned long pressStartMs = 0;
-    unsigned long eventIndex = 0;
-
-    for (;;)
+  "version": 1,
+  "author": "Lab3",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-arduino-mega", "id": "mega", "top": 0.6, "left": 6, "attrs": {} },
+    { "type": "wokwi-led", "id": "led1", "top": -99.6, "left": 99.8, "attrs": {} },
     {
-        uint8_t rawVal     = hw_digital_read(BTN_PIN);
-        uint8_t rawPressed = (rawVal == PIN_LOW) ? 1 : 0;  /* active-low */
-
-        /* ── Debounce state machine ─────────────────────────────── */
-        if (rawPressed != stablePressed)
-        {
-            matchCount++;
-            if (matchCount >= DEBOUNCE_SAMPLES)
-            {
-                matchCount    = 0;
-                stablePressed = rawPressed;
-
-                if (stablePressed)
-                {
-                    /* Button just pressed */
-                    pressStartMs = hw_millis();
-                }
-                else
-                {
-                    /* Button just released */
-                    unsigned long dur = hw_millis() - pressStartMs;
-                    uint8_t isS = (dur < SHORT_THRESHOLD_MS) ? 1 : 0;
-                    eventIndex++;
-
-                    /* Update statistics immediately when event is detected */
-                    if (xSemaphoreTake(g_shared.statsMutex,
-                                      portMAX_DELAY) == pdTRUE)
-                    {
-                        g_shared.stats.totalPresses++;
-                        g_shared.stats.totalDurationMs += (uint32_t)dur;
-
-                        if (isS)
-                        {
-                            g_shared.stats.shortPresses++;
-                            g_shared.stats.shortDurationMs += (uint32_t)dur;
-                        }
-                        else
-                        {
-                            g_shared.stats.longPresses++;
-                            g_shared.stats.longDurationMs += (uint32_t)dur;
-                        }
-
-                        xSemaphoreGive(g_shared.statsMutex);
-                    }
-
-                    /* Queue one full event so bursts are not lost */
-                    {
-                        PressEventData eventData;
-                        eventData.durationMs = (uint32_t)dur;
-                        eventData.isShort    = isS;
-
-                        if (xQueueSend(g_shared.pressEventQueue, &eventData, 0) != pdPASS)
-                        {
-                            printf("[WARN] LED event queue full\r\n");
-                        }
-                    }
-
-                    if (xSemaphoreTake(g_shared.ioMutex, portMAX_DELAY) == pdTRUE)
-                    {
-                        printf(
-                            "+---------------- Button Event ----------------+\r\n"
-                            "| Event ID : %-31lu |\r\n"
-                            "| Type     : %-31s |\r\n"
-                            "| Duration : %-27lu ms |\r\n"
-                            "+----------------------------------------------+\r\n\r\n",
-                            eventIndex,
-                            isS ? "SHORT" : "LONG",
-                            (unsigned long)dur
-                        );
-                        xSemaphoreGive(g_shared.ioMutex);
-                    }
-                }
-            }
-        }
-        else
-        {
-            matchCount = 0;
-        }
-
-        vTaskDelay(1);  /* yield for 1 tick */
-    }
-}
-
-ReportingtTask.c
-/**
- * @file ReportingTask.c
- * @brief Pure-C FreeRTOS task – periodic serial statistics report
- */
-
-#include "ReportingTask.h"
-#include "Lab2_2_Shared.h"
-#include "avr_helpers.h"
-
-#include <stdio.h>
-#include <Arduino_FreeRTOS.h>
-#include <task.h>
-#include <semphr.h>
-
-void TaskReporting(void *pv)
-{
-    (void)pv;
-    if (xSemaphoreTake(g_shared.ioMutex, portMAX_DELAY) == pdTRUE)
+      "type": "wokwi-ntc-temperature-sensor",
+      "id": "ntc1",
+      "top": 386.7,
+      "left": 115.1,
+      "rotate": 270,
+      "attrs": {}
+    },
     {
-        printf("[Report] === Task started ===\r\n");
-        xSemaphoreGive(g_shared.ioMutex);
-    }
-
-    TickType_t lastWake = xTaskGetTickCount();
-
-    for (;;)
+      "type": "wokwi-lcd1602",
+      "id": "lcd1",
+      "top": 54.4,
+      "left": 466.4,
+      "attrs": { "pins": "i2c", "i2cAddress": "0x27" }
+    },
+    { "type": "wokwi-dht22", "id": "dht1", "top": 353.1, "left": 246, "rotate": 180, "attrs": {} },
     {
-        uint16_t tp = 0, sp = 0, lp = 0;
-        uint32_t td = 0;
-
-        if (xSemaphoreTake(g_shared.statsMutex, portMAX_DELAY) == pdTRUE)
-        {
-            tp = g_shared.stats.totalPresses;
-            sp = g_shared.stats.shortPresses;
-            lp = g_shared.stats.longPresses;
-            td = g_shared.stats.totalDurationMs;
-
-            /* Reset for next reporting window */
-            g_shared.stats.totalPresses    = 0;
-            g_shared.stats.shortPresses    = 0;
-            g_shared.stats.longPresses     = 0;
-            g_shared.stats.totalDurationMs = 0;
-            g_shared.stats.shortDurationMs = 0;
-            g_shared.stats.longDurationMs  = 0;
-            xSemaphoreGive(g_shared.statsMutex);
-        }
-
-        {
-            uint32_t avg = (tp > 0) ? (td / tp) : 0;
-
-            if (xSemaphoreTake(g_shared.ioMutex, portMAX_DELAY) == pdTRUE)
-            {
-                printf(
-                    "+------------------------------------------+\r\n"
-                    "|            Button Statistics             |\r\n"
-                    "+------------------------------------------+\r\n"
-                    "| Total presses         : %-12u |\r\n"
-                    "| Short presses         : %-12u |\r\n"
-                    "| Long presses          : %-12u |\r\n"
-                    "| Average duration (ms) : %-12lu |\r\n"
-                    "+------------------------------------------+\r\n\r\n",
-                    tp,
-                    sp,
-                    lp,
-                    (unsigned long)avg
-                );
-                xSemaphoreGive(g_shared.ioMutex);
-            }
-        }
-
-        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(10000));
+      "type": "wokwi-led",
+      "id": "led2",
+      "top": -99.6,
+      "left": 138.2,
+      "attrs": { "color": "blue" }
     }
+  ],
+  "connections": [
+    [ "led1:A", "mega:13", "red", [ "v0" ] ],
+    [ "led1:C", "mega:GND.1", "black", [ "v0" ] ],
+    [ "mega:GND.3", "ntc1:GND", "black", [ "v0" ] ],
+    [ "mega:5V", "ntc1:VCC", "red", [ "v0" ] ],
+    [ "ntc1:OUT", "mega:A0", "cyan", [ "h0" ] ],
+    [ "lcd1:GND", "mega:GND.2", "black", [ "h0" ] ],
+    [ "lcd1:VCC", "mega:5V", "red", [ "h0" ] ],
+    [ "lcd1:SDA", "mega:20", "yellow", [ "h0" ] ],
+    [ "lcd1:SCL", "mega:21", "yellow", [ "h0" ] ],
+    [ "dht1:VCC", "mega:5V", "red", [ "v0" ] ],
+    [ "dht1:GND", "mega:GND.3", "black", [ "v0" ] ],
+    [ "dht1:SDA", "mega:7", "white", [ "v0" ] ],
+    [ "led2:A", "mega:12", "blue", [ "v0" ] ],
+    [ "led2:C", "mega:GND.1", "black", [ "v0" ] ]
+  ],
+  "dependencies": {}
 }
-
-ReportingTask.h
-/**
- * @file ReportingTask.h
- * @brief Pure-C header for periodic reporting FreeRTOS task
- */
-
-#ifndef REPORTING_TASK_H
-#define REPORTING_TASK_H
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-void TaskReporting(void *pv);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* REPORTING_TASK_H */
-
-StatisticsTask.c
-/**
- * @file StatisticsTask.c
- * @brief Pure-C FreeRTOS task – updates stats, drives indicator LEDs
- */
-
-#include "StatisticsTask.h"
-#include "Lab2_2_Shared.h"
-#include "avr_helpers.h"
-
-#include <stdio.h>
-#include <Arduino_FreeRTOS.h>
-#include <task.h>
-#include <semphr.h>
-#include <queue.h>
-
-void TaskStatistics(void *pv)
-{
-    (void)pv;
-    if (xSemaphoreTake(g_shared.ioMutex, portMAX_DELAY) == pdTRUE)
-    {
-        printf("[Stats] === Task started ===\n");
-        xSemaphoreGive(g_shared.ioMutex);
-    }
-
-    for (;;)
-    {
-        PressEventData eventData;
-
-        /* Block until a full press event is available */
-        if (xQueueReceive(g_shared.pressEventQueue,
-                          &eventData,
-                          portMAX_DELAY) == pdTRUE)
-        {
-            uint8_t  isS = eventData.isShort;
-
-            uint8_t blinks = 0;
-
-            if (isS)
-                blinks = 5;
-            else
-                blinks = 10;
-
-            /* LED feedback: green = short, red = long */
-            if (isS)
-            {
-                hw_digital_write(LED_GREEN_PIN, PIN_HIGH);
-                hw_digital_write(LED_RED_PIN,   PIN_LOW);
-            }
-            else
-            {
-                hw_digital_write(LED_RED_PIN,   PIN_HIGH);
-                hw_digital_write(LED_GREEN_PIN, PIN_LOW);
-            }
-
-            /* Yellow blink feedback: each blink = 250 ms on + 250 ms off */
-            {
-                uint8_t i;
-                for (i = 0; i < blinks; i++)
-                {
-                    hw_digital_write(LED_YELLOW_PIN, PIN_HIGH);
-                    vTaskDelay(pdMS_TO_TICKS(100));
-                    hw_digital_write(LED_YELLOW_PIN, PIN_LOW);
-                    vTaskDelay(pdMS_TO_TICKS(100));
-                }
-            }
-
-            /* All LEDs off after feedback sequence */
-            hw_digital_write(LED_GREEN_PIN,  PIN_LOW);
-            hw_digital_write(LED_RED_PIN,    PIN_LOW);
-            hw_digital_write(LED_YELLOW_PIN, PIN_LOW);
-
-            if (xSemaphoreTake(g_shared.ioMutex, portMAX_DELAY) == pdTRUE)
-            {
-                printf("[Stats] Event processed: %s, queue pending=%u\r\n",
-                       isS ? "SHORT" : "LONG",
-                      (unsigned)uxQueueMessagesWaiting(g_shared.pressEventQueue));
-                xSemaphoreGive(g_shared.ioMutex);
-            }
-        }
-    }
-}
-
-StatisticsTask.h
-/**
- * @file StatisticsTask.h
- * @brief Pure-C header for statistics & LED feedback FreeRTOS task
- */
-
-#ifndef STATISTICS_TASK_H
-#define STATISTICS_TASK_H
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-void TaskStatistics(void *pv);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* STATISTICS_TASK_H */
 
 

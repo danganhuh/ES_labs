@@ -13,11 +13,12 @@
 #include <avr/wdt.h>
 #include <util/delay.h>
 #include <stdio.h>
+#include "drivers/SerialStdioDriver.h"
 
 // ============================================================================
 // CONFIGURATION – change this value to select a lab
 // ============================================================================
-//   1  = Lab 1.1   12 = Lab 1.2   2 = Lab 2   22 = Lab 2.2 (FreeRTOS, C)   3 = Lab 3
+//   1  = Lab 1.1   12 = Lab 1.2   2 = Lab 2   22 = Lab 2.2 (FreeRTOS, C)   3 = Lab 3   32 = Lab 3.2
 #define SELECTED_LAB 3
 // ============================================================================
 
@@ -86,34 +87,6 @@ void dbg_flush(void)
 } /* extern "C" */
 
 // ============================================================================
-// UART stdio redirection – makes printf() -> Serial TX
-// ============================================================================
-static FILE uart_stream;
-
-static int uart_putchar(char c, FILE *stream)
-{
-    Serial.write(c);
-    return 0;
-}
-
-static int uart_getchar(FILE *stream)
-{
-    while (!Serial.available()) {}
-    return Serial.read();
-}
-
-static void serial_stdio_init(unsigned long baudRate)
-{
-    Serial.begin(baudRate);
-    unsigned long startMs = millis();
-    while (!Serial && (millis() - startMs < 1500UL)) {}
-
-    fdev_setup_stream(&uart_stream, uart_putchar, uart_getchar, _FDEV_SETUP_RW);
-    stdout = &uart_stream;
-    stdin  = &uart_stream;
-}
-
-// ============================================================================
 // Lab includes
 // ============================================================================
 
@@ -139,6 +112,10 @@ static void serial_stdio_init(unsigned long baudRate)
     #include "Lab3/Lab3_main.h"
 #endif
 
+#if SELECTED_LAB == 32
+    #include "Lab3_2/Lab3_2_main.h"
+#endif
+
 // ============================================================================
 // Arduino entry points
 // ============================================================================
@@ -148,14 +125,19 @@ void setup()
     wdt_disable();
 
 #if SELECTED_LAB == 22
-    serial_stdio_init(9600);
+    SerialStdioInit(9600);
 
     printf("[main] === Lab 2.2 starting ===\n");
 #endif
 
 #if SELECTED_LAB == 3
-    serial_stdio_init(9600);
+    SerialStdioInit(9600);
     printf("[main] === Lab 3 starting ===\n");
+#endif
+
+#if SELECTED_LAB == 32
+    SerialStdioInit(9600);
+    printf("[main] === Lab 3.2 starting ===\n");
 #endif
 
 #if SELECTED_LAB == 1
@@ -168,6 +150,8 @@ void setup()
     lab2_2_setup();
 #elif SELECTED_LAB == 3
     lab3_setup();
+#elif SELECTED_LAB == 32
+    lab3_2_setup();
 #endif
 }
 
@@ -183,5 +167,7 @@ void loop()
     lab2_2_loop();
 #elif SELECTED_LAB == 3
     lab3_loop();
+#elif SELECTED_LAB == 32
+    lab3_2_loop();
 #endif
 }

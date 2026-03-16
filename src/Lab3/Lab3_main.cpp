@@ -38,11 +38,6 @@ static void taskLcdDisplay(void *pv);
 static const TickType_t MUTEX_TIMEOUT_TICKS = pdMS_TO_TICKS(20);
 static const TickType_t DHT_MIN_REFRESH_TICKS = pdMS_TO_TICKS(2000);
 
-static const char* sensorSourceName(Lab3SensorSource src)
-{
-    return (src == LAB3_SENSOR_SOURCE_DHT) ? "DHT" : "NTC";
-}
-
 static int lcd_putchar(char c, FILE *stream)
 {
     (void)stream;
@@ -74,56 +69,22 @@ static int lcd_putchar(char c, FILE *stream)
 
 static void lcd_printf_lines(const char* line1, const char* line2)
 {
+    BaseType_t ioLocked = pdFALSE;
+    if ((g_lab3.ioMutex != NULL) && (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED))
+    {
+        ioLocked = xSemaphoreTake(g_lab3.ioMutex, pdMS_TO_TICKS(20));
+    }
+
     s_lcd.clear();
     s_lcdRow = 0u;
     s_lcdCol = 0u;
     s_lcd.setCursor(0, 0);
     fprintf(&s_lcdStream, "%-16.16s\n%-16.16s", line1 ? line1 : "", line2 ? line2 : "");
-}
 
-static bool readLineWithTimeout(char* outBuf, size_t outLen, unsigned long timeoutMs)
-{
-    if (!outBuf || outLen == 0u)
+    if (ioLocked == pdTRUE)
     {
-        return false;
+        xSemaphoreGive(g_lab3.ioMutex);
     }
-
-    size_t idx = 0u;
-    const unsigned long startMs = millis();
-
-    while ((millis() - startMs) < timeoutMs)
-    {
-        while (Serial.available() > 0)
-        {
-            const int rx = Serial.read();
-            if (rx < 0)
-            {
-                continue;
-            }
-
-            const char c = (char)rx;
-            if (c == '\r' || c == '\n')
-            {
-                if (idx == 0u)
-                {
-                    continue;
-                }
-
-                outBuf[idx] = '\0';
-                return true;
-            }
-
-            if (idx < (outLen - 1u))
-            {
-                outBuf[idx++] = c;
-            }
-        }
-
-        delay(10);
-    }
-
-    outBuf[0] = '\0';
-    return false;
 }
 
 static const char* fmtFloat(float value, uint8_t width, uint8_t precision, char* outBuf)
@@ -153,7 +114,7 @@ static void readConfigFromStdio(Lab3Config* cfg)
 {
     printf("\\n[Lab3] Enter config: <thresholdC> <hysteresisC> <sampleMs> <persistMs> <reportMs> <alpha>\\n");
     printf("[Lab3] Example: 25 1 50 100 1000 0.25\\n");
-    printf("[Lab3] Waiting 5s for serial input, then defaults are used.\\n> ");
+    printf("[Lab3] Enter values now using scanf format (or invalid values for defaults).\\n> ");
 
     float threshold = cfg->thresholdC;
     float hysteresis = cfg->hysteresisC;
@@ -162,12 +123,7 @@ static void readConfigFromStdio(Lab3Config* cfg)
     int reportMs = cfg->reportMs;
     float alpha = cfg->alpha;
 
-    char lineBuf[96];
-    int parsed = 0;
-    if (readLineWithTimeout(lineBuf, sizeof(lineBuf), 5000UL))
-    {
-        parsed = sscanf(lineBuf, "%f %f %d %d %d %f", &threshold, &hysteresis, &sampleMs, &persistMs, &reportMs, &alpha);
-    }
+    const int parsed = scanf("%f %f %d %d %d %f", &threshold, &hysteresis, &sampleMs, &persistMs, &reportMs, &alpha);
 
     if (parsed == 6)
     {
@@ -472,39 +428,31 @@ static void taskDisplay(void *pv)
 
         if (xSemaphoreTake(g_lab3.ioMutex, MUTEX_TIMEOUT_TICKS) == pdTRUE)
         {
-               char plotRawBuf[16], plotFiltBuf[16], plotHighBuf[16], plotLowBuf[16], plotAdcBuf[16];
-               char filtViewBuf[16], rawViewBuf[16], clampViewBuf[16], humViewBuf[16];
-             const char* ledMode = (!snap.dhtDataValid) ? "OFF" : ((snap.dhtTempC >= LAB3_LED_BLINK_C) ? "BLINK" : ((snap.dhtTempC >= LAB3_LED_ON_C) ? "ON" : "OFF"));
+            char filtViewBuf[16], rawViewBuf[16], clampViewBuf[16], dhtTViewBuf[16], dhtHViewBuf[16];
+            const char* ntcLedMode = (!snap.sensorDataValid) ? "OFF" : ((snap.filteredTempC >= LAB3_LED_BLINK_C) ? "BLINK" : ((snap.filteredTempC >= LAB3_LED_ON_C) ? "ON" : "OFF"));
+            const char* dhtLedMode = (!snap.dhtDataValid) ? "OFF" : ((snap.dhtTempC >= LAB3_LED_BLINK_C) ? "BLINK" : ((snap.dhtTempC >= LAB3_LED_ON_C) ? "ON" : "OFF"));
                const char* stateName = snap.debouncedAlert ? "ALERT" : "NORMAL";
-               const char* srcName = sensorSourceName(snap.activeSource);
-               const char* validName = snap.sensorDataValid ? "OK" : "WAIT";
 
-             const float highThreshold = g_lab3.config.thresholdC + g_lab3.config.hysteresisC;
-             const float lowThreshold = g_lab3.config.thresholdC - g_lab3.config.hysteresisC;
+            printf("[L3][NTC] i=%lu v=%s raw=%sC adc=%u clamp=%sC filt=%sC st=%s mode=%s p=%u/%u tr=%lu\r\n",
+                   (unsigned long)snap.sampleIndex,
+                   snap.sensorDataValid ? "OK" : "WAIT",
+                   fmtFloat(snap.rawTempC, 0, 2, rawViewBuf),
+                   snap.rawAdc,
+                   fmtFloat(snap.clampedTempC, 0, 2, clampViewBuf),
+                   fmtFloat(snap.filteredTempC, 0, 2, filtViewBuf),
+                   stateName,
+                   ntcLedMode,
+                   snap.persistenceCounter,
+                   snap.persistenceSamples,
+                   (unsigned long)snap.alertTransitions);
 
-                  printf("[L3] i=%lu src=%s v=%s raw=%sC hum=%s%% clamp=%sC filt=%sC st=%s mode=%s led=%u p=%u/%u tr=%lu\r\n",
-                      (unsigned long)snap.sampleIndex,
-                      srcName,
-                      validName,
-                      fmtFloat(snap.rawTempC, 0, 2, rawViewBuf),
-                      fmtFloat(snap.rawHumidityPct, 0, 1, humViewBuf),
-                      fmtFloat(snap.clampedTempC, 0, 2, clampViewBuf),
-                      fmtFloat(snap.filteredTempC, 0, 2, filtViewBuf),
-                      stateName,
-                      ledMode,
-                      snap.alertLedState ? 1u : 0u,
-                      snap.persistenceCounter,
-                      snap.persistenceSamples,
-                      (unsigned long)snap.alertTransitions);
-
-                         printf("PLOT,%s,%s,%s,%s,%s,%s,%u\n",
-                 fmtFloat(snap.rawTempC, 0, 3, plotRawBuf),
-                 fmtFloat(snap.filteredTempC, 0, 3, plotFiltBuf),
-                 fmtFloat(highThreshold, 0, 3, plotHighBuf),
-                 fmtFloat(lowThreshold, 0, 3, plotLowBuf),
-                 fmtFloat((float)snap.rawAdc, 0, 3, plotAdcBuf),
-                     fmtFloat(snap.rawHumidityPct, 0, 3, humViewBuf),
-                                 snap.alertLedState ? 1u : 0u);
+            printf("[L3][DHT] i=%lu v=%s t=%sC h=%s%% mode=%s led=%u\r\n",
+                   (unsigned long)snap.sampleIndex,
+                   snap.dhtDataValid ? "OK" : "WAIT",
+                   fmtFloat(snap.dhtTempC, 0, 2, dhtTViewBuf),
+                   fmtFloat(snap.dhtHumidityPct, 0, 1, dhtHViewBuf),
+                   dhtLedMode,
+                   snap.alertLedState ? 1u : 0u);
 
             xSemaphoreGive(g_lab3.ioMutex);
         }

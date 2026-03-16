@@ -27,6 +27,20 @@
       "top": -99.6,
       "left": 138.2,
       "attrs": { "color": "blue" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led3",
+      "top": -99.6,
+      "left": 176.6,
+      "attrs": { "color": "yellow" }
+    },
+    {
+      "type": "wokwi-hc-sr04",
+      "id": "us1",
+      "top": 233.4,
+      "left": 404.8,
+      "attrs": {}
     }
   ],
   "connections": [
@@ -43,7 +57,13 @@
     [ "dht1:GND", "mega:GND.3", "black", [ "v0" ] ],
     [ "dht1:SDA", "mega:7", "white", [ "v0" ] ],
     [ "led2:A", "mega:12", "blue", [ "v0" ] ],
-    [ "led2:C", "mega:GND.1", "black", [ "v0" ] ]
+    [ "led2:C", "mega:GND.1", "black", [ "v0" ] ],
+    [ "led3:A", "mega:11", "yellow", [ "v0" ] ],
+    [ "led3:C", "mega:GND.1", "black", [ "v0" ] ],
+    [ "us1:VCC", "mega:5V", "red", [ "v0" ] ],
+    [ "us1:GND", "mega:GND.2", "black", [ "v0" ] ],
+    [ "us1:TRIG", "mega:8", "green", [ "v0" ] ],
+    [ "us1:ECHO", "mega:9", "purple", [ "v0" ] ]
   ],
   "dependencies": {}
 }
