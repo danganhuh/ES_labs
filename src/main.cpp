@@ -18,8 +18,8 @@
 // ============================================================================
 // CONFIGURATION – change this value to select a lab
 // ============================================================================
-//   1  = Lab 1.1   12 = Lab 1.2   2 = Lab 2   22 = Lab 2.2 (FreeRTOS, C)   3 = Lab 3   32 = Lab 3.2
-#define SELECTED_LAB 3
+//   1  = Lab 1.1   12 = Lab 1.2   2 = Lab 2   22 = Lab 2.2 (FreeRTOS, C)   3 = Lab 3   32 = Lab 3.2   41 = Lab 4.1
+#define SELECTED_LAB 41
 // ============================================================================
 
 // ============================================================================
@@ -116,6 +116,10 @@ void dbg_flush(void)
     #include "Lab3_2/Lab3_2_main.h"
 #endif
 
+#if SELECTED_LAB == 41
+    #include "Lab4/Lab4_main.h"
+#endif
+
 // ============================================================================
 // Arduino entry points
 // ============================================================================
@@ -140,6 +144,10 @@ void setup()
     printf("[main] === Lab 3.2 starting ===\n");
 #endif
 
+#if SELECTED_LAB == 41
+    printf("[main] === Lab 4.1 starting ===\n");
+#endif
+
 #if SELECTED_LAB == 1
     Lab1_Setup();
 #elif SELECTED_LAB == 12
@@ -152,6 +160,8 @@ void setup()
     lab3_setup();
 #elif SELECTED_LAB == 32
     lab3_2_setup();
+#elif SELECTED_LAB == 41
+    lab4_setup();
 #endif
 }
 
@@ -169,5 +179,7 @@ void loop()
     lab3_loop();
 #elif SELECTED_LAB == 32
     lab3_2_loop();
+#elif SELECTED_LAB == 41
+    lab4_loop();
 #endif
 }
