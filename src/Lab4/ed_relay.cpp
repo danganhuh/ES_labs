@@ -1,4 +1,5 @@
 #include "ed_relay.h"
+#include "Lab4_Shared.h"
 #include "../led/LedDriver.h"
 
 static LedDriver* s_relay = NULL;
@@ -22,7 +23,12 @@ void ed_relay_set_state(int state)
     }
 
     s_state = (state == HIGH) ? HIGH : LOW;
-    if (s_state == HIGH)
+    bool shouldEnergize = (s_state == HIGH);
+#if LAB4_RELAY_ACTIVE_LOW
+    shouldEnergize = !shouldEnergize;
+#endif
+
+    if (shouldEnergize)
     {
         s_relay->On();
     }

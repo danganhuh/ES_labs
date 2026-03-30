@@ -1,62 +1,81 @@
 {
   "version": 1,
-  "author": "Lab4.1",
+  "author": "Lab4.2",
   "editor": "wokwi",
   "parts": [
     { "type": "wokwi-arduino-mega", "id": "mega", "top": 0, "left": 0, "attrs": {} },
     {
       "type": "wokwi-relay-module",
       "id": "relay1",
-      "top": 313.4,
+      "top": 265.4,
       "left": 50.8,
       "rotate": 90,
       "attrs": {}
     },
     {
-      "type": "wokwi-stepper-motor",
-      "id": "fan1",
-      "top": -369.89,
-      "left": 231.28,
-      "attrs": { "size": "42", "label": "Fan Actuator" }
+      "type": "wokwi-servo",
+      "id": "servo1",
+      "top": -269.8,
+      "left": 309,
+      "rotate": 270,
+      "attrs": { "label": "Servo Actuator" }
     },
     {
       "type": "wokwi-led",
       "id": "ledEnable",
       "top": -100,
       "left": 105,
-      "attrs": { "color": "green", "label": "Fan EN" }
+      "attrs": { "color": "green", "label": "Relay ON" }
     },
     {
       "type": "wokwi-led",
       "id": "ledRelayPin",
       "top": -100,
       "left": 145,
-      "attrs": { "color": "red", "label": "Relay Pin" }
+      "attrs": { "color": "red", "label": "Relay OFF" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "ledServoAlert",
+      "top": -100,
+      "left": 185,
+      "attrs": { "color": "yellow", "label": "Servo Alert" }
     },
     {
       "type": "wokwi-lcd1602",
       "id": "lcd1",
-      "top": -12.8,
-      "left": 533.6,
+      "top": 44.8,
+      "left": 466.4,
       "attrs": { "pins": "i2c", "i2cAddress": "0x27" }
+    },
+    {
+      "type": "wokwi-potentiometer",
+      "id": "pot1",
+      "top": -222.1,
+      "left": 230.2,
+      "attrs": { "label": "Servo Control" }
     }
   ],
   "connections": [
     [ "relay1:VCC", "mega:5V", "red", [ "v0" ] ],
     [ "relay1:GND", "mega:GND.1", "black", [ "v0" ] ],
     [ "relay1:IN", "mega:12", "orange", [ "v0" ] ],
-    [ "fan1:A+", "mega:8", "green", [ "v0" ] ],
-    [ "fan1:A-", "mega:9", "green", [ "v0" ] ],
-    [ "fan1:B+", "mega:10", "blue", [ "v0" ] ],
-    [ "fan1:B-", "mega:11", "blue", [ "v0" ] ],
-    [ "ledEnable:A", "mega:10", "green", [ "v0" ] ],
+    [ "servo1:PWM", "mega:5", "orange", [ "v0" ] ],
+    [ "servo1:V+", "mega:5V", "red", [ "v0" ] ],
+    [ "servo1:GND", "mega:GND.1", "black", [ "v0" ] ],
+    [ "ledEnable:A", "mega:6", "green", [ "v0" ] ],
     [ "ledEnable:C", "mega:GND.1", "black", [ "v0" ] ],
-    [ "ledRelayPin:A", "mega:12", "red", [ "v0" ] ],
+    [ "ledRelayPin:A", "mega:7", "red", [ "v0" ] ],
     [ "ledRelayPin:C", "mega:GND.1", "black", [ "v0" ] ],
+    [ "ledServoAlert:A", "mega:4", "yellow", [ "v0" ] ],
+    [ "ledServoAlert:C", "mega:GND.1", "black", [ "v0" ] ],
     [ "lcd1:GND", "mega:GND.3", "black", [ "h0" ] ],
     [ "lcd1:VCC", "mega:5V", "red", [ "h0" ] ],
     [ "lcd1:SDA", "mega:20", "yellow", [ "h0" ] ],
-    [ "lcd1:SCL", "mega:21", "yellow", [ "h0" ] ]
+    [ "lcd1:SCL", "mega:21", "yellow", [ "h0" ] ],
+    [ "pot1:GND", "mega:GND.2", "black", [ "v0" ] ],
+    [ "pot1:V+", "mega:5V.1", "red", [ "v0" ] ],
+    [ "pot1:SIG", "mega:A0", "purple", [ "v0" ] ]
   ],
   "dependencies": {}
 }

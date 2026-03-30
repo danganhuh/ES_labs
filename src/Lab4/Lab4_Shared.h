@@ -6,6 +6,9 @@
 #include <semphr.h>
 
 #define LAB4_RELAY_PIN                 12
+#define LAB4_RELAY_ACTIVE_LOW          1
+#define LAB4_LED_GREEN_PIN             6
+#define LAB4_LED_RED_PIN               7
 #define LAB4_MOTOR_ENA_PIN             10
 #define LAB4_MOTOR_IN1_PIN             9
 #define LAB4_MOTOR_IN2_PIN             8

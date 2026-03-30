@@ -4,6 +4,7 @@
 #include "srv_motor_control.h"
 
 #include "../drivers/SerialStdioDriver.h"
+#include "../led/LedDriver.h"
 
 #include <Arduino.h>
 #include <Arduino_FreeRTOS.h>
@@ -15,6 +16,8 @@
 #include <string.h>
 
 Lab4Shared g_lab4;
+static LedDriver s_greenLed(LAB4_LED_GREEN_PIN);
+static LedDriver s_redLed(LAB4_LED_RED_PIN);
 
 static LiquidCrystal_I2C s_lcd(LAB4_LCD_I2C_ADDR, 16, 2);
 
@@ -98,6 +101,11 @@ void lab4_setup()
     s_lcd.print("Lab4 Actuator");
     s_lcd.setCursor(0, 1);
     s_lcd.print("Init...");
+
+    s_greenLed.Init();
+    s_redLed.Init();
+    s_greenLed.Off();
+    s_redLed.On();
 
     if (xSemaphoreTake(g_lab4.controlMutex, portMAX_DELAY) == pdTRUE)
     {
@@ -332,6 +340,19 @@ static void taskActuator(void* pv)
         {
             srv_light_control_apply();
             srv_motor_control_apply();
+
+            const int relayState = srv_light_control_get_state();
+            if (relayState == HIGH)
+            {
+                s_greenLed.On();
+                s_redLed.Off();
+            }
+            else
+            {
+                s_greenLed.Off();
+                s_redLed.On();
+            }
+
             xSemaphoreGive(g_lab4.controlMutex);
         }
 

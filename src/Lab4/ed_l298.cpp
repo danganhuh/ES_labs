@@ -16,9 +16,9 @@ void ed_l298_init(uint8_t enaPin, uint8_t in1Pin, uint8_t in2Pin)
     pinMode(s_in1Pin, OUTPUT);
     pinMode(s_in2Pin, OUTPUT);
 
-    digitalWrite(s_enaPin, LOW);
-    analogWrite(s_in1Pin, 0);
-    analogWrite(s_in2Pin, 0);
+    analogWrite(s_enaPin, 0);
+    digitalWrite(s_in1Pin, LOW);
+    digitalWrite(s_in2Pin, LOW);
     s_speedPct = 0.0f;
 }
 
@@ -31,22 +31,22 @@ void ed_l298_set_speed_pct(float speedPct)
 
     if (pwm <= 0)
     {
-        digitalWrite(s_enaPin, LOW);
-        analogWrite(s_in1Pin, 0);
-        analogWrite(s_in2Pin, 0);
+        analogWrite(s_enaPin, 0);
+        digitalWrite(s_in1Pin, LOW);
+        digitalWrite(s_in2Pin, LOW);
         return;
     }
 
-    digitalWrite(s_enaPin, HIGH);
+    analogWrite(s_enaPin, pwm);
     if (s_speedPct >= 0.0f)
     {
-        analogWrite(s_in1Pin, pwm);
-        analogWrite(s_in2Pin, 0);
+        digitalWrite(s_in1Pin, HIGH);
+        digitalWrite(s_in2Pin, LOW);
     }
     else
     {
-        analogWrite(s_in1Pin, 0);
-        analogWrite(s_in2Pin, pwm);
+        digitalWrite(s_in1Pin, LOW);
+        digitalWrite(s_in2Pin, HIGH);
     }
 }
 
