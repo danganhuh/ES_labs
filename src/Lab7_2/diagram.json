@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "author": "Lab7_2",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-arduino-mega", "id": "mega", "top": 64, "left": 48, "attrs": {} },
+    { "type": "wokwi-pushbutton", "id": "btn1", "top": -48, "left": 208, "attrs": { "label": "NS_REQ" } },
+
+    { "type": "wokwi-led", "id": "ewGreen", "top": -80, "left": 360, "attrs": { "color": "green", "label": "EW_G" } },
+    { "type": "wokwi-resistor", "id": "rEwG", "top": -40, "left": 360, "attrs": { "value": "220" } },
+    { "type": "wokwi-led", "id": "ewYellow", "top": -80, "left": 440, "attrs": { "color": "yellow", "label": "EW_Y" } },
+    { "type": "wokwi-resistor", "id": "rEwY", "top": -40, "left": 440, "attrs": { "value": "220" } },
+    { "type": "wokwi-led", "id": "ewRed", "top": -80, "left": 520, "attrs": { "color": "red", "label": "EW_R" } },
+    { "type": "wokwi-resistor", "id": "rEwR", "top": -40, "left": 520, "attrs": { "value": "220" } },
+
+    { "type": "wokwi-led", "id": "nsGreen", "top": 16, "left": 360, "attrs": { "color": "green", "label": "NS_G" } },
+    { "type": "wokwi-resistor", "id": "rNsG", "top": 56, "left": 360, "attrs": { "value": "220" } },
+    { "type": "wokwi-led", "id": "nsYellow", "top": 16, "left": 440, "attrs": { "color": "yellow", "label": "NS_Y" } },
+    { "type": "wokwi-resistor", "id": "rNsY", "top": 56, "left": 440, "attrs": { "value": "220" } },
+    { "type": "wokwi-led", "id": "nsRed", "top": 16, "left": 520, "attrs": { "color": "red", "label": "NS_R" } },
+    { "type": "wokwi-resistor", "id": "rNsR", "top": 56, "left": 520, "attrs": { "value": "220" } },
+
+    { "type": "wokwi-lcd1602", "id": "lcd1", "top": 176, "left": 432, "attrs": { "pins": "i2c", "i2cAddress": "0x27", "label": "LCD I2C" } }
+  ],
+  "connections": [
+    [ "btn1:1.l", "mega:2", "green", [ "v0" ] ],
+    [ "btn1:2.l", "mega:GND.1", "black", [ "v0" ] ],
+
+    [ "ewGreen:A", "mega:11", "green", [ "v0" ] ],
+    [ "ewGreen:C", "rEwG:1", "green", [ "v0" ] ],
+    [ "rEwG:2", "mega:GND.2", "black", [ "v0" ] ],
+
+    [ "ewYellow:A", "mega:10", "green", [ "v0" ] ],
+    [ "ewYellow:C", "rEwY:1", "green", [ "v0" ] ],
+    [ "rEwY:2", "mega:GND.2", "black", [ "v0" ] ],
+
+    [ "ewRed:A", "mega:9", "green", [ "v0" ] ],
+    [ "ewRed:C", "rEwR:1", "green", [ "v0" ] ],
+    [ "rEwR:2", "mega:GND.2", "black", [ "v0" ] ],
+
+    [ "nsGreen:A", "mega:8", "green", [ "v0" ] ],
+    [ "nsGreen:C", "rNsG:1", "green", [ "v0" ] ],
+    [ "rNsG:2", "mega:GND.2", "black", [ "v0" ] ],
+
+    [ "nsYellow:A", "mega:7", "green", [ "v0" ] ],
+    [ "nsYellow:C", "rNsY:1", "green", [ "v0" ] ],
+    [ "rNsY:2", "mega:GND.2", "black", [ "v0" ] ],
+
+    [ "nsRed:A", "mega:6", "green", [ "v0" ] ],
+    [ "nsRed:C", "rNsR:1", "green", [ "v0" ] ],
+    [ "rNsR:2", "mega:GND.2", "black", [ "v0" ] ],
+
+    [ "lcd1:GND", "mega:GND.3", "black", [ "v0" ] ],
+    [ "lcd1:VCC", "mega:5V", "red", [ "v0" ] ],
+    [ "lcd1:SDA", "mega:20", "yellow", [ "v0" ] ],
+    [ "lcd1:SCL", "mega:21", "yellow", [ "v0" ] ]
+  ],
+  "dependencies": {}
+}

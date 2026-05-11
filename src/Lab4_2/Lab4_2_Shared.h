@@ -6,7 +6,7 @@
 #include <semphr.h>
 
 #define LAB4_2_RELAY_PIN               12
-#define LAB4_2_RELAY_ACTIVE_LOW        1
+#define LAB4_2_RELAY_ACTIVE_LOW        0
 #define LAB4_2_LED_GREEN_PIN           6
 #define LAB4_2_LED_RED_PIN             7
 #define LAB4_2_LED_SERVO_ALERT_PIN     4
@@ -39,6 +39,9 @@ typedef struct
     bool relayCommand;
     float rawServoPct;
     bool servoManualMode;
+
+    uint16_t potAdc;
+    float potPct;
 
     float clampedServoPct;
     float medianServoPct;

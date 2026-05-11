@@ -1,81 +1,72 @@
-{
+﻿{
   "version": 1,
-  "author": "Lab4.2",
+  "author": "Lab 5.2 — DS18B20 + L9110H cooling fan (combined ON-OFF + PID).\nWokwi has no L9110H part; we drive the fan-direction PWM straight from D7 to a wokwi-fan via a transistor (the simulator treats the fan as PWM-controlled by the analog level on its IN pin). D8 (IB / reverse) is wired to a yellow LED for visual confirmation that the firmware never asks for reverse cooling.",
   "editor": "wokwi",
   "parts": [
-    { "type": "wokwi-arduino-mega", "id": "mega", "top": 0, "left": 0, "attrs": {} },
+    { "type": "wokwi-arduino-mega", "id": "mega", "top": 80, "left": 30, "attrs": {} },
     {
-      "type": "wokwi-relay-module",
-      "id": "relay1",
-      "top": 265.4,
-      "left": 50.8,
+      "type": "wokwi-ds18b20",
+      "id": "temp1",
+      "top": -90,
+      "left": 600,
+      "attrs": { "temperature": "30" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "rpu",
+      "top": -50,
+      "left": 720,
       "rotate": 90,
+      "attrs": { "value": "4700", "label": "4.7k pull-up" }
+    },
+    {
+      "type": "wokwi-fan",
+      "id": "fan1",
+      "top": 200,
+      "left": 470,
       "attrs": {}
     },
     {
-      "type": "wokwi-servo",
-      "id": "servo1",
-      "top": -269.8,
-      "left": 309,
-      "rotate": 270,
-      "attrs": { "label": "Servo Actuator" }
+      "type": "wokwi-led",
+      "id": "ledRev",
+      "top": 360,
+      "left": 460,
+      "attrs": { "color": "yellow", "label": "IB (reverse, should stay off)" }
     },
     {
-      "type": "wokwi-led",
-      "id": "ledEnable",
-      "top": -100,
-      "left": 105,
-      "attrs": { "color": "green", "label": "Relay ON" }
-    },
-    {
-      "type": "wokwi-led",
-      "id": "ledRelayPin",
-      "top": -100,
-      "left": 145,
-      "attrs": { "color": "red", "label": "Relay OFF" }
-    },
-    {
-      "type": "wokwi-led",
-      "id": "ledServoAlert",
-      "top": -100,
-      "left": 185,
-      "attrs": { "color": "yellow", "label": "Servo Alert" }
+      "type": "wokwi-resistor",
+      "id": "rled",
+      "top": 360,
+      "left": 380,
+      "rotate": 90,
+      "attrs": { "value": "220" }
     },
     {
       "type": "wokwi-lcd1602",
       "id": "lcd1",
-      "top": 44.8,
-      "left": 466.4,
-      "attrs": { "pins": "i2c", "i2cAddress": "0x27" }
-    },
-    {
-      "type": "wokwi-potentiometer",
-      "id": "pot1",
-      "top": -222.1,
-      "left": 230.2,
-      "attrs": { "label": "Servo Control" }
+      "top": 100,
+      "left": -320,
+      "attrs": { "pins": "i2c", "i2cAddress": "0x27", "label": "I2C LCD 0x27" }
     }
   ],
   "connections": [
-    [ "relay1:VCC", "mega:5V", "red", [ "v0" ] ],
-    [ "relay1:GND", "mega:GND.1", "black", [ "v0" ] ],
-    [ "relay1:IN", "mega:12", "orange", [ "v0" ] ],
-    [ "servo1:PWM", "mega:5", "orange", [ "v0" ] ],
-    [ "servo1:V+", "mega:5V", "red", [ "v0" ] ],
-    [ "servo1:GND", "mega:GND.1", "black", [ "v0" ] ],
-    [ "ledEnable:A", "mega:6", "green", [ "v0" ] ],
-    [ "ledEnable:C", "mega:GND.1", "black", [ "v0" ] ],
-    [ "ledRelayPin:A", "mega:7", "red", [ "v0" ] ],
-    [ "ledRelayPin:C", "mega:GND.1", "black", [ "v0" ] ],
-    [ "ledServoAlert:A", "mega:4", "yellow", [ "v0" ] ],
-    [ "ledServoAlert:C", "mega:GND.1", "black", [ "v0" ] ],
-    [ "lcd1:GND", "mega:GND.3", "black", [ "h0" ] ],
-    [ "lcd1:VCC", "mega:5V", "red", [ "h0" ] ],
-    [ "lcd1:SDA", "mega:20", "yellow", [ "h0" ] ],
-    [ "lcd1:SCL", "mega:21", "yellow", [ "h0" ] ],
-    [ "pot1:GND", "mega:GND.2", "black", [ "v0" ] ],
-    [ "pot1:V+", "mega:5V.1", "red", [ "v0" ] ],
-    [ "pot1:SIG", "mega:A0", "purple", [ "v0" ] ]
+    [ "temp1:VCC", "mega:5V",   "red",   [ "v0" ] ],
+    [ "temp1:GND", "mega:GND.1","black", [ "v0" ] ],
+    [ "temp1:DQ",  "mega:5",    "green", [ "v0" ] ],
+    [ "rpu:1",     "temp1:DQ",  "",      [ "v0" ] ],
+    [ "rpu:2",     "mega:5V",   "red",   [ "v0" ] ],
+
+    [ "fan1:VCC",  "mega:7",    "orange",[ "v0" ] ],
+    [ "fan1:GND",  "mega:GND.2","black", [ "v0" ] ],
+
+    [ "rled:1",    "mega:8",    "green", [ "v0" ] ],
+    [ "rled:2",    "ledRev:A",  "",      [ "v0" ] ],
+    [ "ledRev:C",  "mega:GND.3","black", [ "v0" ] ],
+
+    [ "lcd1:VCC",  "mega:5V",   "red",   [ "v0" ] ],
+    [ "lcd1:GND",  "mega:GND.4","black", [ "v0" ] ],
+    [ "lcd1:SDA",  "mega:20",   "blue",  [ "v0" ] ],
+    [ "lcd1:SCL",  "mega:21",   "blue",  [ "v0" ] ]
   ],
   "dependencies": {}
 }

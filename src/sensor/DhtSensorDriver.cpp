@@ -2,13 +2,10 @@
 
 #include <math.h>
 
-#ifndef DHTTYPE
-#define DHTTYPE DHT22
-#endif
-
-DhtSensorDriver::DhtSensorDriver(uint8_t dataPin)
-    : pin(dataPin),
-      dht(dataPin, DHTTYPE)
+DhtSensorDriver::DhtSensorDriver(uint8_t dataPin, uint8_t sensorType)
+        : pin(dataPin),
+            type(sensorType),
+            dht(dataPin, sensorType)
 {
 }
 
@@ -28,24 +25,26 @@ bool DhtSensorDriver::Read(float* outTempC, float* outHumidityPct)
         return false;
     }
 
-    // Retry a few times because DHT timing may occasionally fail in RTOS context.
-    for (uint8_t attempt = 0; attempt < 3u; ++attempt)
+    // Trigger ONE fresh bus transaction (force=true bypasses the library's
+    // MIN_INTERVAL=2000ms guard, which otherwise quietly returns cached data
+    // if our 2 s schedule undershoots by even 1 ms due to clock drift).
+    // The subsequent readHumidity()/readTemperature() calls then decode from
+    // the same in-memory buffer (they are cache hits, NOT extra bus reads).
+    if (!dht.read(true))
     {
-        // Force a fresh bus read so value changes propagate quickly
-        // (cached reads can lag by ~2s+ depending on library timing).
-        float h = dht.readHumidity(true);
-        float t = dht.readTemperature(false, true);
+        return false;
+    }
 
-        if (!isnan(t) && !isnan(h)
-            && t >= -40.0f && t <= 85.0f
-            && h >= 0.0f && h <= 100.0f)
-        {
-            *outTempC = t;
-            *outHumidityPct = h;
-            return true;
-        }
+    const float h = dht.readHumidity();
+    const float t = dht.readTemperature();
 
-        delay(5);
+    if (!isnan(t) && !isnan(h)
+        && t >= -40.0f && t <= 85.0f
+        && h >= 0.0f && h <= 100.0f)
+    {
+        *outTempC = t;
+        *outHumidityPct = h;
+        return true;
     }
 
     return false;

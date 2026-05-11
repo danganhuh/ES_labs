@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "author": "Lab 5.2 - Closed-Loop Air Temperature (DHT11 + relay heater). Wokwi has no separate dht11 part with identical pinout; we re-use wokwi-dht22 for layout. The real hardware is a 3-pin DHT11 module (VCC/DATA/GND); code reads it as DHT11.",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-arduino-mega", "id": "mega", "top": 77.4, "left": 34.8, "attrs": {} },
+    {
+      "type": "wokwi-dht22",
+      "id": "dht1",
+      "top": -258.9,
+      "left": 234.6,
+      "attrs": { "temperature": "23" }
+    },
+    { "type": "wokwi-relay-module", "id": "rly1", "top": -201.4, "left": 499.2, "attrs": {} },
+    {
+      "type": "wokwi-resistor",
+      "id": "r1",
+      "top": 120,
+      "left": 469.85,
+      "rotate": 90,
+      "attrs": { "value": "100", "label": "100 Ω 1/4W" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r2",
+      "top": 187.2,
+      "left": 489.05,
+      "rotate": 90,
+      "attrs": { "value": "100", "label": "100 Ω 1/4W" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r3",
+      "top": 129.6,
+      "left": 546.65,
+      "rotate": 90,
+      "attrs": { "value": "100", "label": "100 Ω 1/4W" }
+    },
+    {
+      "type": "wokwi-lcd1602",
+      "id": "lcd1",
+      "top": 102.4,
+      "left": -320.8,
+      "attrs": { "pins": "i2c", "i2cAddress": "0x27", "label": "I2C LCD 0x27" }
+    }
+  ],
+  "connections": [
+    [ "dht1:VCC", "mega:5V", "red", [ "v0" ] ],
+    [ "dht1:GND", "mega:GND.1", "black", [ "v0" ] ],
+    [ "dht1:SDA", "mega:2", "green", [ "v0" ] ],
+    [ "rly1:VCC", "mega:5V", "red", [ "h-38.4", "v444.3" ] ],
+    [ "rly1:GND", "mega:GND.2", "black", [ "h-48", "v434.3" ] ],
+    [ "rly1:IN", "mega:8", "yellow", [ "h-57.6", "v249.4" ] ],
+    [ "rly1:COM", "mega:5V", "red", [ "h145.2", "v449.8", "h-559.1" ] ],
+    [ "rly1:NO", "r1:1", "orange", [ "h30", "v247.8" ] ],
+    [ "rly1:NO", "r2:1", "orange", [ "h97.2", "v267" ] ],
+    [ "rly1:NO", "r3:1", "orange", [ "h58.8", "v276.6" ] ],
+    [ "r1:2", "mega:GND.3", "black", [ "v0" ] ],
+    [ "r2:2", "mega:GND.3", "black", [ "v0" ] ],
+    [ "r3:2", "mega:GND.3", "black", [ "v0" ] ],
+    [ "lcd1:VCC", "mega:5V", "red", [ "v0" ] ],
+    [ "lcd1:GND", "mega:GND.4", "black", [ "v0" ] ],
+    [ "lcd1:SDA", "mega:20", "blue", [ "v0" ] ],
+    [ "lcd1:SCL", "mega:21", "blue", [ "v0" ] ]
+  ],
+  "dependencies": {}
+}

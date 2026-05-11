@@ -66,7 +66,8 @@ static void lcd_render(const Lab42RuntimeState* s)
 
     snprintf(line2,
              sizeof(line2),
-             "A:%c%c%c%c",
+             "P:%3u%% %c%c%c%c",
+             (unsigned)(s->potPct + 0.5f),
              s->clampAlert ? 'C' : '-',
              s->limitAlert ? 'L' : '-',
              s->relayDebounceAlert ? 'D' : '-',
@@ -95,6 +96,8 @@ void lab4_2_setup()
     g_lab42.state.relayCommand = false;
     g_lab42.state.rawServoPct = 0.0f;
     g_lab42.state.servoManualMode = false;
+    g_lab42.state.potAdc = 0u;
+    g_lab42.state.potPct = 0.0f;
     g_lab42.state.clampedServoPct = 0.0f;
     g_lab42.state.medianServoPct = 0.0f;
     g_lab42.state.weightedServoPct = 0.0f;
@@ -152,12 +155,6 @@ void lab4_2_setup()
     ok = xTaskCreate(taskDisplay, "L42_DISP", 768, NULL, 1, NULL);
     if (ok != pdPASS) { for (;;) {} }
 
-    if (xSemaphoreTake(g_lab42.ioMutex, pdMS_TO_TICKS(30)) == pdTRUE)
-    {
-        printf("[L4.2] Commands: relay on/off | on/off relay | servo <0..100> | servo min | servo max | servo pot | status\n");
-        printf("[L4.2] Alerts: C=clamp, L=limit, D=relay debounce, S=servo extreme (0%% or 100%%)\n");
-        xSemaphoreGive(g_lab42.ioMutex);
-    }
 }
 
 void lab4_2_loop()
@@ -178,7 +175,6 @@ static void taskCommand(void* pv)
             bool relayValue = false;
             bool servoChange = false;
             float servoValue = 0.0f;
-
             char arg1[20] = {0};
             char arg2[20] = {0};
             int number = 0;
@@ -192,18 +188,6 @@ static void taskCommand(void* pv)
                     relayValue = true;
                 }
                 else if (iequals(arg1, "relay") && iequals(arg2, "off"))
-                {
-                    known = true;
-                    relayChange = true;
-                    relayValue = false;
-                }
-                else if (iequals(arg1, "on") && iequals(arg2, "relay"))
-                {
-                    known = true;
-                    relayChange = true;
-                    relayValue = true;
-                }
-                else if (iequals(arg1, "off") && iequals(arg2, "relay"))
                 {
                     known = true;
                     relayChange = true;
@@ -275,7 +259,7 @@ static void taskCommand(void* pv)
 
                 if (xSemaphoreTake(g_lab42.ioMutex, pdMS_TO_TICKS(30)) == pdTRUE)
                 {
-                    printf("[L4.2] Command detected: %s\n", line);
+                    printf("%s\n", line);
                     xSemaphoreGive(g_lab42.ioMutex);
                 }
             }
@@ -289,7 +273,7 @@ static void taskCommand(void* pv)
 
                 if (xSemaphoreTake(g_lab42.ioMutex, pdMS_TO_TICKS(30)) == pdTRUE)
                 {
-                    printf("[L4.2] Invalid command: %s\n", line);
+                    printf("%s\n", line);
                     xSemaphoreGive(g_lab42.ioMutex);
                 }
             }
@@ -376,13 +360,17 @@ static void taskActuator(void* pv)
         const unsigned long nowMs = millis();
         relay42_set_command(&s_relayCtrl, relayCmd, nowMs);
         relay42_update(&s_relayCtrl, nowMs);
-        servo42_apply_pct(&s_servoCtrl, servoPct);
 
         const bool relayState = relay42_get_state(&s_relayCtrl);
+        if (relayState)
+        {
+            servo42_apply_pct(&s_servoCtrl, servoPct);
+        }
+
         const bool debounceAlert = relay42_consume_debounce_alert(&s_relayCtrl);
-        const uint16_t servoDeg = servo42_get_deg(&s_servoCtrl);
-        const float servoPctApplied = servo42_get_pct(&s_servoCtrl);
-        const bool servoExtremeAlert = (servoPctApplied <= 0.1f) || (servoPctApplied >= 99.9f);
+        const uint16_t servoDeg = relayState ? servo42_get_deg(&s_servoCtrl) : 0u;
+        const float servoPctApplied = relayState ? servo42_get_pct(&s_servoCtrl) : 0.0f;
+        const bool servoExtremeAlert = relayState && ((servoPctApplied <= 0.1f) || (servoPctApplied >= 99.9f));
 
         if (relayState)
         {
@@ -406,6 +394,8 @@ static void taskActuator(void* pv)
 
         if (xSemaphoreTake(g_lab42.stateMutex, pdMS_TO_TICKS(30)) == pdTRUE)
         {
+            g_lab42.state.potAdc = (uint16_t)rawAdcVal;
+            g_lab42.state.potPct = potPct;
             g_lab42.state.relayState = relayState;
             g_lab42.state.servoDeg = servoDeg;
             g_lab42.state.servoPct = servoPctApplied;

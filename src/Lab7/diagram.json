@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "author": "Lab7 Part 1 - Button-LED FSM",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-arduino-mega",
+      "id": "mega",
+      "top": 64,
+      "left": 48,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn1",
+      "top": -96,
+      "left": 248,
+      "attrs": { "label": "Button (Pin 2)" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led1",
+      "top": 0,
+      "left": 336,
+      "attrs": { "color": "red", "label": "LED (Pin 13)" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r1",
+      "top": 8,
+      "left": 392,
+      "attrs": { "value": "220", "label": "220Ω LED Resistor" }
+    }
+  ],
+  "connections": [
+    [ "btn1:1.left", "mega:2", "green", [ "v0" ] ],
+    [ "btn1:1.right", "mega:GND.1", "black", [ "v0" ] ],
+    [ "led1:A", "mega:13", "yellow", [ "v0" ] ],
+    [ "led1:C", "r1:1", "black", [ "v0" ] ],
+    [ "r1:2", "mega:GND.2", "black", [ "v0" ] ]
+  ],
+  "dependencies": {}
+}

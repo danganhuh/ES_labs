@@ -18,9 +18,17 @@
 // ============================================================================
 // CONFIGURATION – change this value to select a lab
 // ============================================================================
-//   1  = Lab 1.1   12 = Lab 1.2   2 = Lab 2   22 = Lab 2.2 (FreeRTOS, C)   3 = Lab 3   32 = Lab 3.2   41 = Lab 4.1   42 = Lab 4.2
-#define SELECTED_LAB 42
+//   1  = Lab 1.1   12 = Lab 1.2   2 = Lab 2   22 = Lab 2.2 (FreeRTOS, C)
+//   3  = Lab 3     32 = Lab 3.2   41 = Lab 4.1   42 = Lab 4.2
+//   52 = Lab 5.2 (DS18B20 + L9110H fan, ON-OFF + PID combined)
+//   7  = Lab 7 (Button-LED FSM)   72 = Lab 7.2 (Traffic Light FSM)
+//
+// Note: standalone Lab 5 has been scrapped; src/Lab5/ now only holds a
+// frozen snapshot of the old relay-heater build under
+// `backup_lab5_2_relay_heater/` (not compiled).
+#define SELECTED_LAB 7
 // ============================================================================
+
 
 // ============================================================================
 // C-callable hardware wrappers (used by Lab2_2/*.c via avr_helpers.h)
@@ -124,9 +132,22 @@ void dbg_flush(void)
     #include "Lab4_2/Lab4_2_main.h"
 #endif
 
+#if SELECTED_LAB == 52
+    #include "Lab5_2/Lab5_2_main.h"
+#endif
+
+#if SELECTED_LAB == 7
+    #include "Lab7/Lab7_main.h"
+#endif
+
+#if SELECTED_LAB == 72
+    #include "Lab7_2/Lab7_2_main.h"
+#endif
+
 // ============================================================================
 // Arduino entry points
 // ============================================================================
+
 
 void setup()
 {
@@ -149,14 +170,32 @@ void setup()
 #endif
 
 #if SELECTED_LAB == 41
+    SerialStdioInit(9600);
     printf("[main] === Lab 4.1 starting ===\n");
 #endif
 
 #if SELECTED_LAB == 42
+    SerialStdioInit(9600);
     printf("[main] === Lab 4.2 starting ===\n");
 #endif
 
+#if SELECTED_LAB == 52
+    SerialStdioInit(115200);
+    printf("[main] === Lab 5.2 starting ===\n");
+#endif
+
+#if SELECTED_LAB == 7
+    SerialStdioInit(115200);
+    printf("[main] === Lab 7 Part 1 starting ===\n");
+#endif
+
+#if SELECTED_LAB == 72
+    SerialStdioInit(115200);
+    printf("[main] === Lab 7 Part 2 starting ===\n");
+#endif
+
 #if SELECTED_LAB == 1
+
     Lab1_Setup();
 #elif SELECTED_LAB == 12
     lab1_2_setup();
@@ -172,6 +211,12 @@ void setup()
     lab4_setup();
 #elif SELECTED_LAB == 42
     lab4_2_setup();
+#elif SELECTED_LAB == 52
+    lab5_2_setup();
+#elif SELECTED_LAB == 7
+    lab7_setup();
+#elif SELECTED_LAB == 72
+    lab7_2_setup();
 #endif
 }
 
@@ -193,5 +238,11 @@ void loop()
     lab4_loop();
 #elif SELECTED_LAB == 42
     lab4_2_loop();
+#elif SELECTED_LAB == 52
+    lab5_2_loop();
+#elif SELECTED_LAB == 7
+    lab7_loop();
+#elif SELECTED_LAB == 72
+    lab7_2_loop();
 #endif
 }

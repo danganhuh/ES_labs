@@ -10,15 +10,19 @@
  * - SerialReadLine(): Reads a newline-terminated line from Serial
  * - StdioInit(): Redirects printf() to LCD, scanf() from Keypad
  *
+ * FreeRTOS: When the scheduler is running, each byte written through printf
+ * is protected by a mutex so multiple tasks cannot interleave on
+ * Serial.write() (which produces garbled monitors like "ain[main[ma...").
+ *
  * Architecture: Lab -> StdioDriver -> UART or LCD/Keypad -> MCAL -> Hardware
  */
 
 #include "SerialStdioDriver.h"
+#include <Arduino.h>
+#include <Arduino_FreeRTOS.h>
+#include <semphr.h>
 #include <stdio.h>
-
-// ============================================================================
-// SERIAL-BASED I/O FUNCTIONS (for serial communication)
-// ============================================================================
+#include <task.h>
 
 // ============================================================================
 // Static FILE streams for UART stdio redirection
@@ -26,12 +30,29 @@
 
 static FILE UartStdOut;
 
+/** TX mutex: one complete stream of bytes per "line" of printf at a time. */
+static SemaphoreHandle_t s_uartTxMutex = NULL;
+
 /**
  * @brief Callback: write one character to the UART (used by printf)
  */
 static int UartPutChar(char c, FILE *stream)
 {
-    Serial.write(c);
+    (void)stream;
+
+    if (s_uartTxMutex != NULL &&
+        xTaskGetSchedulerState() == taskSCHEDULER_RUNNING)
+    {
+        if (xSemaphoreTake(s_uartTxMutex, portMAX_DELAY) == pdTRUE)
+        {
+            Serial.write((uint8_t)c);
+            xSemaphoreGive(s_uartTxMutex);
+        }
+    }
+    else
+    {
+        Serial.write((uint8_t)c);
+    }
     return 0;
 }
 
@@ -41,8 +62,36 @@ static int UartPutChar(char c, FILE *stream)
  */
 static int UartGetChar(FILE *stream)
 {
-    while (!Serial.available()) {}
-    return Serial.read();
+    (void)stream;
+
+    for (;;)
+    {
+        if (Serial.available() > 0)
+        {
+            break;
+        }
+        /* Let TX and other tasks run while waiting (avoids starving printf). */
+        if (xTaskGetSchedulerState() == taskSCHEDULER_RUNNING)
+        {
+            taskYIELD();
+        }
+    }
+
+    int value = -1;
+    if (s_uartTxMutex != NULL &&
+        xTaskGetSchedulerState() == taskSCHEDULER_RUNNING)
+    {
+        if (xSemaphoreTake(s_uartTxMutex, portMAX_DELAY) == pdTRUE)
+        {
+            value = Serial.read();
+            xSemaphoreGive(s_uartTxMutex);
+        }
+    }
+    else
+    {
+        value = Serial.read();
+    }
+    return value;
 }
 
 /**
@@ -56,12 +105,16 @@ static int UartGetChar(FILE *stream)
  */
 void SerialStdioInit(unsigned long baudRate)
 {
-    Serial.begin(baudRate);   // MCAL: Initialize serial
+    Serial.begin(baudRate);
 
     unsigned long startMs = millis();
     while (!Serial && (millis() - startMs < 1500UL)) {}
 
-    // Redirect printf (stdout) and scanf (stdin) to UART
+    if (s_uartTxMutex == NULL)
+    {
+        s_uartTxMutex = xSemaphoreCreateMutex();
+    }
+
     fdev_setup_stream(&UartStdOut, UartPutChar, UartGetChar, _FDEV_SETUP_RW);
     stdout = &UartStdOut;
     stdin  = &UartStdOut;
@@ -83,11 +136,11 @@ void SerialReadLine(char* buf, int maxLen)
     int index = 0;
     while (index < maxLen - 1)
     {
-        while (!Serial.available()) {}       // block until a byte arrives
+        while (!Serial.available()) {}
         char c = static_cast<char>(Serial.read());
         if (c == '\n' || c == '\r')
         {
-            break;                           // end of line
+            break;
         }
         buf[index++] = c;
     }
@@ -96,12 +149,11 @@ void SerialReadLine(char* buf, int maxLen)
 
 /**
  * @brief Initialize STDIO redirection to LCD and Keypad
- * 
+ *
  * In this build profile, serial stdio is used; LCD/Keypad redirection
  * is intentionally not enabled to avoid optional hardware dependencies.
  */
 void StdioInit()
 {
-    // No-op for Lab3 serial-stdio mode.
+    /* No-op for Lab3 serial-stdio mode. */
 }
-
